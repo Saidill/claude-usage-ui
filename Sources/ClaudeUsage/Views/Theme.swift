@@ -1,40 +1,73 @@
 import AppKit
 import SwiftUI
 
-enum Palette {
-    static let bg = Color(hex: 0x141312)
-    static let surface = Color(hex: 0x1C1B19)
-    static let hairline = Color.white.opacity(0.07)
-    static let text = Color(hex: 0xF2EFEA)
-    static let text2 = Color(hex: 0xF2EFEA).opacity(0.58)
-    static let text3 = Color(hex: 0xF2EFEA).opacity(0.34)
-    static let track = Color.white.opacity(0.06)
-    static let accent = Color(hex: 0xD97757)
-    static let sand = Color(hex: 0xCDBFA8)
-    static let critical = Color(hex: 0xE5484D)
+// MARK: - Colours & type
 
-    static let series: [Color] = [accent, sand, text2, text3]
+enum Palette {
+    static let bg = Color.dynamic(light: 0xF4F6FB, dark: 0x13151B)
+    static let card = Color.dynamic(light: 0xFFFFFF, dark: 0x1D2028)
+    static let line = Color.dynamic(light: 0xECEFF5, dark: 0x2A2E39)
+    static let text = Color.dynamic(light: 0x1B1F2E, dark: 0xF2F3F7)
+    static let text2 = Color.dynamic(light: 0x676D82, dark: 0xA3A8BA)
+    static let text3 = Color.dynamic(light: 0xA6ABBB, dark: 0x6A7084)
+
+    static let blue = Color.dynamic(light: 0x3D7BFF, dark: 0x5B8FFF)
+    static let mint = Color.dynamic(light: 0x14C495, dark: 0x2EE0B0)
+    static let sun = Color.dynamic(light: 0xFFB020, dark: 0xFFC247)
+    static let coral = Color.dynamic(light: 0xFF5C7C, dark: 0xFF7590)
+
+    static let confetti: [Color] = [blue, mint, sun, coral]
+
+    /// Base colour while usage is comfortable, then sunny, then coral as it gets close to the limit.
+    static func level(_ percent: Double, base: Color) -> Color {
+        switch percent {
+        case ..<70: return base
+        case ..<90: return sun
+        default: return coral
+        }
+    }
 }
 
 extension Color {
-    init(hex: UInt32) {
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(hex: dark) : NSColor(hex: light)
+        })
+    }
+}
+
+extension NSColor {
+    convenience init(hex: UInt32) {
         self.init(
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
         )
     }
 }
 
 extension Font {
-    /// Editorial serif (New York) for headline numbers.
-    static func display(_ size: CGFloat) -> Font { .system(size: size, weight: .regular, design: .serif) }
-    static let body13 = Font.system(size: 13)
-    static let small = Font.system(size: 11)
+    static func rounded(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .rounded)
+    }
 }
 
-/// Small uppercase section label.
-struct Eyebrow<Trailing: View>: View {
+// MARK: - Containers
+
+extension View {
+    func card() -> some View {
+        padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Palette.card)
+                    .shadow(color: .black.opacity(0.05), radius: 10, y: 3)
+            )
+    }
+}
+
+struct CardTitle<Trailing: View>: View {
     let text: String
     let trailing: Trailing
 
@@ -44,258 +77,374 @@ struct Eyebrow<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(text.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.4)
-                .foregroundStyle(Palette.text3)
+        HStack {
+            Text(text).font(.rounded(14, .bold)).foregroundStyle(Palette.text)
             Spacer()
             trailing
         }
     }
 }
 
-extension Eyebrow where Trailing == EmptyView {
-    init(_ text: String) {
-        self.text = text
-        self.trailing = EmptyView()
-    }
+extension CardTitle where Trailing == EmptyView {
+    init(_ text: String) { self.init(text) { EmptyView() } }
 }
 
-struct Hairline: View {
-    var body: some View { Rectangle().fill(Palette.hairline).frame(height: 1) }
-}
+// MARK: - Controls
 
-/// Toolbar icon with a soft hover state.
+/// Round toolbar button that pops a little on hover.
 struct IconButton: View {
     let systemName: String
     let help: String
+    var rotation: Double = 0
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(hovering ? Palette.text : Palette.text2)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(hovering ? Palette.track : .clear))
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(hovering ? Palette.blue : Palette.text2)
+                .rotationEffect(.degrees(rotation))
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Palette.card))
+                .scaleEffect(hovering ? 1.12 : 1)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { h in withAnimation(.spring(duration: 0.3, bounce: 0.6)) { hovering = h } }
         .help(help)
     }
 }
 
-/// Two-option text switch with an accent underline.
-struct TextSwitch: View {
+/// Segmented control whose highlight pill slides between options.
+struct PillToggle: View {
     let options: [String]
     @Binding var selection: Int
+    @Namespace private var ns
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 2) {
             ForEach(options.indices, id: \.self) { i in
-                Button { selection = i } label: {
-                    Text(options[i])
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(selection == i ? Palette.text : Palette.text3)
-                        .padding(.bottom, 3)
-                        .overlay(alignment: .bottom) {
-                            Rectangle().fill(selection == i ? Palette.accent : .clear).frame(height: 1.5)
+                Text(options[i])
+                    .font(.rounded(11, .semibold))
+                    .foregroundStyle(selection == i ? .white : Palette.text2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background {
+                        if selection == i {
+                            Capsule().fill(Palette.blue).matchedGeometryEffect(id: "pill", in: ns)
                         }
-                }
-                .buttonStyle(.plain)
+                    }
+                    .contentShape(Capsule())
+                    .onTapGesture {
+                        withAnimation(.spring(duration: 0.35, bounce: 0.4)) { selection = i }
+                    }
             }
         }
-        .animation(.easeOut(duration: 0.15), value: selection)
+        .padding(2)
+        .background(Capsule().fill(Palette.line))
     }
 }
 
-/// Dot with a slow outward ripple, used for anything that is live.
-struct PulsingDot: View {
-    var color: Color = Palette.accent
-    var size: CGFloat = 7
-    @State private var animate = false
+struct Chip: View {
+    let label: String
+    let value: String
+    let color: Color
 
     var body: some View {
-        ZStack {
-            Circle().fill(color.opacity(0.45))
-                .frame(width: size, height: size)
-                .scaleEffect(animate ? 2.6 : 1)
-                .opacity(animate ? 0 : 1)
-            Circle().fill(color).frame(width: size, height: size)
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label).foregroundStyle(Palette.text2)
+            Spacer(minLength: 2)
+            Text(value).fontWeight(.semibold).foregroundStyle(Palette.text).monospacedDigit()
         }
-        .frame(width: size * 2.6, height: size * 2.6)
-        .onAppear {
-            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { animate = true }
-        }
+        .font(.rounded(11))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(color.opacity(0.12)))
     }
 }
 
-/// Watch-style dial: minute-tick bezel, outer ring = session limit, inner ring = weekly limit.
-struct LimitDial: View {
-    let outer: Double?  // 0...100
-    let inner: Double?
-    var size: CGFloat = 118
+// MARK: - Animated pieces
+
+/// Circle that fills with gently moving water up to `percent`.
+struct LiquidBubble: View {
+    let percent: Double?
+    let title: String
+    let subtitle: String
+    let base: Color
+
+    @State private var hovering = false
+    // Fill animates from `from` to `percent`, starting at `start` (bubble creation, then each change).
+    @State private var from = 0.0
+    @State private var start = Date()
+
+    private var color: Color { Palette.level(percent ?? 0, base: base) }
 
     var body: some View {
-        ZStack {
-            Canvas { ctx, canvasSize in
-                let c = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
-                let r = canvasSize.width / 2
-                for i in 0..<60 {
-                    let major = i % 5 == 0
-                    let angle: CGFloat = CGFloat(i) / 60 * 2 * .pi - .pi / 2
-                    let dx: CGFloat = cos(angle), dy: CGFloat = sin(angle)
-                    let inner: CGFloat = r - (major ? 5 : 2.5)
-                    var p = Path()
-                    p.move(to: CGPoint(x: c.x + dx * inner, y: c.y + dy * inner))
-                    p.addLine(to: CGPoint(x: c.x + dx * r, y: c.y + dy * r))
-                    ctx.stroke(p, with: .color(.white.opacity(major ? 0.28 : 0.12)), lineWidth: 1)
-                }
+        VStack(spacing: 8) {
+            TimelineView(.animation(minimumInterval: 1 / 40)) { context in
+                bubble(at: context.date)
+            }
+            .frame(width: 96, height: 96)
+            .overlay(Circle().strokeBorder(color.opacity(0.3), lineWidth: 2))
+            .scaleEffect(hovering ? 1.07 : 1)
+            .onHover { h in withAnimation(.spring(duration: 0.35, bounce: 0.55)) { hovering = h } }
+            .onChange(of: percent) { old, _ in
+                from = old ?? 0
+                start = Date()
             }
 
-            ring(value: outer, color: outer.map(Self.sessionColor) ?? Palette.accent, diameter: size - 20)
-            ring(value: inner, color: Palette.sand, diameter: size - 40)
-
-            VStack(spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(outer.map { "\(Int($0.rounded()))" } ?? "–")
-                        .font(.display(30))
-                        .foregroundStyle(Palette.text)
-                        .contentTransition(.numericText())
-                    Text("%").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.text3)
-                }
-                Text("session").font(.system(size: 9.5)).foregroundStyle(Palette.text3)
+            VStack(spacing: 1) {
+                Text(title).font(.rounded(13, .semibold)).foregroundStyle(Palette.text)
+                Text(subtitle).font(.rounded(11)).foregroundStyle(Palette.text2)
             }
         }
-        .frame(width: size, height: size)
-        .animation(.spring(duration: 0.8), value: outer)
-        .animation(.spring(duration: 0.8), value: inner)
     }
 
-    static func sessionColor(_ v: Double) -> Color { v >= 90 ? Palette.critical : Palette.accent }
+    private func bubble(at now: Date) -> some View {
+        let progress = min(1, max(0, now.timeIntervalSince(start) / 1.4))
+        let eased = 1 - pow(1 - progress, 3)
+        let value = from + ((percent ?? 0) - from) * eased
+        let phase = now.timeIntervalSinceReferenceDate * (hovering ? 3.2 : 1.4)
+        let level = value / 100
 
-    private func ring(value: Double?, color: Color, diameter: CGFloat) -> some View {
-        ZStack {
-            Circle().stroke(Palette.track, lineWidth: 6)
-            Circle()
-                .trim(from: 0, to: min(max((value ?? 0) / 100, 0), 1))
-                .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+        return ZStack {
+            Circle().fill(color.opacity(0.12))
+            Wave(level: level, phase: phase + 1.8, amplitude: 4.5).fill(color.opacity(0.35))
+            Wave(level: level, phase: phase, amplitude: 3.5).fill(color)
+            percentLabel(value).foregroundStyle(Palette.text)
+            percentLabel(value).foregroundStyle(.white)
+                .mask(Wave(level: level, phase: phase, amplitude: 3.5))
         }
-        .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
+    }
+
+    private func percentLabel(_ value: Double) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 1) {
+            Text(percent == nil ? "–" : "\(Int(value.rounded()))").font(.rounded(26, .bold)).monospacedDigit()
+            Text("%").font(.rounded(12, .bold))
+        }
     }
 }
 
-/// Slim bar chart; the highlighted bar is drawn in the accent colour.
-struct BarChart: View {
+struct Wave: Shape {
+    var level: Double  // 0...1
+    var phase: Double
+    var amplitude: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard level > 0 else { return path }
+        // Calm the wave near empty/full so it never spills past the edges.
+        let calm = CGFloat(min(1, min(level, 1 - level) * 8 + 0.15))
+        let amp = amplitude * calm
+        let baseline = rect.maxY - rect.height * CGFloat(level)
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        for x in stride(from: CGFloat(0), through: rect.width, by: 2) {
+            let angle = Double(x / rect.width) * 2 * .pi * 1.2 + phase
+            let y = baseline + CGFloat(sin(angle)) * amp
+            path.addLine(to: CGPoint(x: rect.minX + x, y: y))
+        }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Three dots hopping one after another, like someone typing.
+struct BouncingDots: View {
+    var color: Color = Palette.blue
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 40)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 3) {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .fill(color)
+                        .frame(width: 5, height: 5)
+                        .offset(y: -abs(sin(t * 5 - Double(i) * 0.7)) * 4)
+                }
+            }
+        }
+    }
+}
+
+/// Bar chart where bars spring up one by one; hovering a bar reports its index.
+struct InteractiveBars: View {
     let values: [Int]
     /// Evenly spaced axis labels; values.count should be a multiple of labels.count.
     let labels: [String]
-    var centerLabels = false
-    var highlight: Int? = nil
-    var future: Int? = nil  // bars at or after this index haven't happened yet
-    var tooltips: [String] = []
-    var height: CGFloat = 46
+    let current: Int
+    var future: Int? = nil
+    @Binding var hovered: Int?
+
+    @State private var grown = false
+    private let height: CGFloat = 60
 
     var body: some View {
         let maxValue = max(values.max() ?? 0, 1)
         VStack(spacing: 6) {
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(values.indices, id: \.self) { i in
-                    ZStack(alignment: .bottom) {
-                        Capsule().fill(Color.white.opacity(0.035)).frame(height: height)
-                        if values[i] > 0 {
-                            Capsule()
-                                .fill(color(i))
-                                .frame(height: max(3, CGFloat(values[i]) / CGFloat(maxValue) * height))
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .help(tooltips.indices.contains(i) ? tooltips[i] : "")
+                    bar(i, maxValue: maxValue)
                 }
             }
             HStack(spacing: 3) {
                 ForEach(labels.indices, id: \.self) { i in
                     Text(labels[i])
-                        .font(.system(size: 9).monospacedDigit())
+                        .font(.rounded(9, .medium))
                         .foregroundStyle(Palette.text3)
-                        .frame(maxWidth: .infinity, alignment: centerLabels ? .center : .leading)
+                        .frame(maxWidth: .infinity, alignment: labels.count == values.count ? .center : .leading)
                 }
+            }
+        }
+        .onAppear { grown = true }
+    }
+
+    private func bar(_ i: Int, maxValue: Int) -> some View {
+        let barHeight: CGFloat = values[i] > 0 ? max(5, CGFloat(values[i]) / CGFloat(maxValue) * height) : 0
+        let isFuture = future.map { i >= $0 } ?? false
+        return ZStack(alignment: .bottom) {
+            Capsule().fill(Palette.line.opacity(isFuture ? 0.5 : 1))
+            Capsule()
+                .fill(color(i))
+                .frame(height: grown ? barHeight : 0)
+                .animation(.spring(duration: 0.7, bounce: 0.45).delay(Double(i) * 0.025), value: grown)
+        }
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .scaleEffect(x: hovered == i ? 1.3 : 1, y: 1, anchor: .bottom)
+        .contentShape(Rectangle())
+        .onHover { h in
+            withAnimation(.spring(duration: 0.25, bounce: 0.5)) {
+                if h { hovered = i } else if hovered == i { hovered = nil }
             }
         }
     }
 
     private func color(_ i: Int) -> Color {
-        if i == highlight { return Palette.accent }
-        if let future, i >= future { return Palette.track }
-        return Palette.text.opacity(0.42)
+        if hovered == i { return Palette.coral }
+        if i == current { return Palette.blue }
+        return Palette.blue.opacity(0.35)
     }
 }
 
-/// Proportional strip of each model's share of tokens.
-struct ModelSplit: View {
-    let models: [ModelUsage]
+/// A one-shot burst of confetti each time `trigger` changes.
+struct ConfettiView: View {
+    let trigger: Int
+
+    private struct Piece {
+        let vx: Double, vy: Double, spin: Double, size: CGSize, color: Color, round: Bool
+    }
+
+    @State private var start: Date?
+    @State private var pieces: [Piece] = []
+    private let lifetime = 1.8
 
     var body: some View {
-        let total = max(models.reduce(0) { $0 + $1.summary.total }, 1)
-        VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { geo in
-                HStack(spacing: 2) {
-                    ForEach(Array(models.prefix(4).enumerated()), id: \.element.id) { i, m in
-                        Capsule()
-                            .fill(Palette.series[i])
-                            .frame(width: max(3, geo.size.width * CGFloat(m.summary.total) / CGFloat(total) - 2))
-                    }
+        TimelineView(.animation(minimumInterval: nil, paused: start == nil)) { context in
+            Canvas { ctx, size in
+                guard let start else { return }
+                let t = context.date.timeIntervalSince(start)
+                guard t < lifetime else { return }
+                for p in pieces {
+                    let x = size.width / 2 + p.vx * t
+                    let y = 60 + p.vy * t + 0.5 * 700 * t * t
+                    var piece = ctx
+                    piece.opacity = 1 - t / lifetime
+                    piece.translateBy(x: x, y: y)
+                    piece.rotate(by: .radians(p.spin * t))
+                    let rect = CGRect(origin: CGPoint(x: -p.size.width / 2, y: -p.size.height / 2), size: p.size)
+                    piece.fill(p.round ? Path(ellipseIn: rect) : Path(rect), with: .color(p.color))
                 }
             }
-            .frame(height: 4)
+        }
+        .allowsHitTesting(false)
+        .onChange(of: trigger) { _, _ in burst() }
+    }
 
-            HStack(spacing: 14) {
-                ForEach(Array(models.prefix(4).enumerated()), id: \.element.id) { i, m in
-                    HStack(spacing: 5) {
-                        Circle().fill(Palette.series[i]).frame(width: 5, height: 5)
-                        Text(prettyModelName(m.model)).foregroundStyle(Palette.text2)
-                        Text("\(Int((Double(m.summary.total) / Double(total) * 100).rounded()))%")
-                            .foregroundStyle(Palette.text3).monospacedDigit()
-                    }
-                    .font(.small)
-                }
-            }
+    private func burst() {
+        pieces = (0..<60).map { _ in
+            let angle = Double.random(in: -Double.pi * 0.95 ... -Double.pi * 0.05)
+            let speed = Double.random(in: 180...420)
+            return Piece(
+                vx: cos(angle) * speed,
+                vy: sin(angle) * speed,
+                spin: Double.random(in: -10...10),
+                size: CGSize(width: Double.random(in: 5...9), height: Double.random(in: 3...6)),
+                color: Palette.confetti.randomElement()!,
+                round: Bool.random()
+            )
+        }
+        start = Date()
+        Task {
+            try? await Task.sleep(for: .seconds(lifetime))
+            start = nil
         }
     }
 }
 
-/// Menu bar glyph: a tiny ring showing the session limit, filled centre while tasks run.
+// MARK: - Menu bar
+
+/// Drives the spinning menu bar icon while a session is working.
+@MainActor
+final class MenuBarAnimator: ObservableObject {
+    @Published private(set) var phase = 0
+    private var timer: Timer?
+
+    func setActive(_ active: Bool) {
+        if active, timer == nil {
+            timer = Timer.scheduledTimer(withTimeInterval: 1 / 12, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.phase += 1 }
+            }
+        } else if !active {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+}
+
 enum MenuBarIcon {
-    static func image(fraction: Double, active: Bool) -> NSImage {
-        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in
-            let center = NSPoint(x: 8, y: 8)
-            let radius: CGFloat = 6.25
-
-            let track = NSBezierPath()
-            track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-            track.lineWidth = 1.8
-            NSColor.black.withAlphaComponent(0.3).setStroke()
-            track.stroke()
-
+    /// Ring that fills with the session limit.
+    static func ring(fraction: Double) -> NSImage {
+        draw { center, radius in
+            stroke(arcFrom: 90, sweep: 360, center: center, radius: radius, alpha: 0.3)
             let f = min(max(fraction, 0), 1)
-            if f > 0 {
-                let arc = NSBezierPath()
-                arc.appendArc(withCenter: center, radius: radius, startAngle: 90, endAngle: 90 - 360 * f, clockwise: true)
-                arc.lineWidth = 1.8
-                arc.lineCapStyle = .round
-                NSColor.black.setStroke()
-                arc.stroke()
-            }
-            if active {
-                NSColor.black.setFill()
-                NSBezierPath(ovalIn: NSRect(x: 5.25, y: 5.25, width: 5.5, height: 5.5)).fill()
-            }
+            if f > 0 { stroke(arcFrom: 90, sweep: 360 * f, center: center, radius: radius, alpha: 1) }
+        }
+    }
+
+    /// Spinner: a short arc that travels around the ring.
+    static func spinner(phase: Int) -> NSImage {
+        draw { center, radius in
+            stroke(arcFrom: 90, sweep: 360, center: center, radius: radius, alpha: 0.3)
+            stroke(arcFrom: 90 - Double(phase % 12) * 30, sweep: 100, center: center, radius: radius, alpha: 1)
+        }
+    }
+
+    static func done() -> NSImage {
+        let image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Done")!
+        image.isTemplate = true
+        return image
+    }
+
+    private static func draw(_ body: @escaping (NSPoint, CGFloat) -> Void) -> NSImage {
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in
+            body(NSPoint(x: 8, y: 8), 6.25)
             return true
         }
         image.isTemplate = true
         return image
+    }
+
+    private static func stroke(arcFrom start: Double, sweep: Double, center: NSPoint, radius: CGFloat, alpha: CGFloat) {
+        let path = NSBezierPath()
+        path.appendArc(withCenter: center, radius: radius,
+                       startAngle: CGFloat(start), endAngle: CGFloat(start - sweep), clockwise: true)
+        path.lineWidth = 2
+        path.lineCapStyle = .round
+        NSColor.black.withAlphaComponent(alpha).setStroke()
+        path.stroke()
     }
 }

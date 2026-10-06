@@ -40,6 +40,13 @@ struct LiveSession: Identifiable, Decodable, Equatable {
 @MainActor
 final class SessionMonitor: ObservableObject {
     @Published private(set) var sessions: [LiveSession] = []
+    /// Increments every time a session finishes; drives the confetti.
+    @Published private(set) var finishCount = 0
+    /// True for a few seconds after a session finishes; the menu bar shows a check mark.
+    @Published private(set) var celebrating = false
+
+    let menuBarAnimator = MenuBarAnimator()
+    private var celebrateTask: Task<Void, Never>?
 
     var busyCount: Int { sessions.filter(\.isBusy).count }
 
@@ -85,6 +92,7 @@ final class SessionMonitor: ObservableObject {
             let previous = lastStatus[session.pid]
             if !firstScan, previous == "busy", !session.isBusy {
                 Notifier.shared.taskFinished(session.displayName)
+                celebrate()
             }
             lastStatus[session.pid] = session.status ?? ""
         }
@@ -93,6 +101,19 @@ final class SessionMonitor: ObservableObject {
         firstScan = false
 
         if found != sessions { sessions = found }
+        menuBarAnimator.setActive(busyCount > 0 && !celebrating)
+    }
+
+    private func celebrate() {
+        finishCount += 1
+        celebrating = true
+        celebrateTask?.cancel()
+        celebrateTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self else { return }
+            self.celebrating = false
+            self.menuBarAnimator.setActive(self.busyCount > 0)
+        }
     }
 
     private static func isAlive(_ pid: Int32) -> Bool {

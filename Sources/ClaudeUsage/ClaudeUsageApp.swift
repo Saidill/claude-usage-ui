@@ -14,7 +14,8 @@ struct ClaudeUsageApp: App {
                 .environmentObject(usage)
                 .environmentObject(limits)
         } label: {
-            MenuBarLabel(sessions: sessions, limits: limits, mode: MenuBarMode(rawValue: menuBarMode) ?? .tasks)
+            MenuBarLabel(sessions: sessions, limits: limits, animator: sessions.menuBarAnimator,
+                         mode: MenuBarMode(rawValue: menuBarMode) ?? .tasks)
         }
         .menuBarExtraStyle(.window)
     }
@@ -23,6 +24,7 @@ struct ClaudeUsageApp: App {
 struct MenuBarLabel: View {
     @ObservedObject var sessions: SessionMonitor
     @ObservedObject var limits: PlanLimitClient
+    @ObservedObject var animator: MenuBarAnimator
     let mode: MenuBarMode
 
     var body: some View {
@@ -32,9 +34,15 @@ struct MenuBarLabel: View {
         case .fiveHour: limits.fiveHourPercent.map { "\(Int($0.rounded()))%" } ?? ""
         }
         HStack(spacing: 4) {
-            Image(nsImage: MenuBarIcon.image(fraction: (limits.fiveHourPercent ?? 0) / 100, active: busy > 0))
+            Image(nsImage: icon(busy: busy))
             if !suffix.isEmpty { Text(suffix).monospacedDigit() }
         }
+    }
+
+    private func icon(busy: Int) -> NSImage {
+        if sessions.celebrating { return MenuBarIcon.done() }
+        if busy > 0 { return MenuBarIcon.spinner(phase: animator.phase) }
+        return MenuBarIcon.ring(fraction: (limits.fiveHourPercent ?? 0) / 100)
     }
 }
 

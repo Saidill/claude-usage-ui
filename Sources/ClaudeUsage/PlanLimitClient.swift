@@ -31,6 +31,8 @@ final class PlanLimitClient: ObservableObject {
     var fiveHourPercent: Double? { windows.first { $0.id == "five_hour" }?.utilization }
 
     private var timer: Timer?
+    /// Set after an HTTP 429 so we stop asking until the server says it's OK again.
+    private var backoffUntil: Date?
 
     init() {
         Task { await refresh() }
@@ -40,6 +42,7 @@ final class PlanLimitClient: ObservableObject {
     }
 
     func refresh() async {
+        if let backoffUntil, Date() < backoffUntil { return }
         do {
             guard let token = await Self.readAccessToken() else {
                 error = "Not logged in to Claude Code (no credentials found)."
@@ -53,6 +56,12 @@ final class PlanLimitClient: ObservableObject {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 429 {
+                let retryAfter = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 300
+                backoffUntil = Date().addingTimeInterval(max(60, retryAfter))
+                error = "Rate limited, retrying in a few minutes."
+                return
+            }
             guard status == 200 else {
                 error = status == 401
                     ? "Token expired. Run `claude` once to refresh it."

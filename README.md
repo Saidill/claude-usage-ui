@@ -7,11 +7,9 @@ A small macOS menu bar app that keeps an eye on Claude Code for you.
 - **A sound when Claude finishes**: plus a notification, so you can look away while it works.
 - **Tokens**: today and the last 7 days, by hour, by model, and split into input, output and cache.
 
-<p align="center">
-  <img src="docs/screenshot.png" width="344" alt="Claude Usage popover">
-</p>
+The menu bar icon is a small ring that fills up as you use your session limit. It spins while Claude is working and turns into a check mark when a session finishes.
 
-The menu bar icon is a small ring that fills up as you use your session limit. A dot appears in the middle while Claude is working.
+A few small touches: the limit bubbles fill with moving water, hovering a bar in the token chart shows that hour's number, clicking a session opens its folder in Finder, and finished sessions get a little confetti.
 
 ## Requirements
 
@@ -29,7 +27,7 @@ cp -R ClaudeUsage.app /Applications/
 open /Applications/ClaudeUsage.app
 ```
 
-Then click the ring in the menu bar → settings → turn on **Open at login**. From then on it starts by itself.
+Then click the ring in the menu bar → ⚙ → turn on **Open at login**. From then on it starts by itself.
 
 If you change the code later, run `./scripts/build-app.sh` again and copy the new app into `/Applications`.
 
@@ -56,7 +54,7 @@ Sources/ClaudeUsage/
   UsageTracker.swift       reads transcripts and adds up tokens
   PlanLimitClient.swift    fetches plan limits
   Notifier.swift           finish sound and notification
-  Views/                   popover, settings and shared styling
+  Views/                   popover, settings, colours and animated components
 scripts/build-app.sh       builds ClaudeUsage.app
 ```
 

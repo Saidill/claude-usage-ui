@@ -6,121 +6,143 @@ struct PopoverView: View {
     @EnvironmentObject var limits: PlanLimitClient
     @State private var showSettings = false
     @State private var range = 0 // 0 = today, 1 = week
+    @State private var hoveredBar: Int?
+    @State private var refreshTurns = 0.0
+    @State private var greetingBounce = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 12) {
             header
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 16)
-
             if showSettings {
                 SettingsView()
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                    .transition(.opacity)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                Group {
-                    limitsSection.padding(.bottom, 20)
-                    Hairline()
-                    tasksSection.padding(.vertical, 18)
-                    Hairline()
-                    tokensSection.padding(.top, 18)
+                VStack(spacing: 12) {
+                    limitsCard
+                    sessionsCard
+                    tokensCard
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 0)
-                Color.clear.frame(height: 20)
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
+        .padding(14)
         .frame(width: 344)
         .background(Palette.bg)
-        .preferredColorScheme(.dark)
-        .animation(.easeOut(duration: 0.18), value: showSettings)
+        .overlay { ConfettiView(trigger: sessions.finishCount) }
+        .animation(.spring(duration: 0.4, bounce: 0.25), value: showSettings)
     }
 
     // MARK: Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 2) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(showSettings ? "Settings" : "Claude")
-                    .font(.display(21))
+        let greeting = Greeting.now
+        return HStack(spacing: 10) {
+            Button { greetingBounce += 1 } label: {
+                Image(systemName: greeting.symbol)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(greeting.color)
+                    .symbolEffect(.bounce, value: greetingBounce)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(greeting.color.opacity(0.16)))
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(showSettings ? "Settings" : greeting.text)
+                    .font(.rounded(17, .bold))
                     .foregroundStyle(Palette.text)
-                HStack(spacing: 2) {
-                    PulsingDot(color: Palette.accent, size: 4.5)
-                        .frame(width: 10, height: 10)
-                    Text("Live · \(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))")
-                        .font(.small)
-                        .foregroundStyle(Palette.text3)
-                }
-                .offset(x: -2)
+                Text(statusLine)
+                    .font(.rounded(12))
+                    .foregroundStyle(Palette.text2)
+                    .contentTransition(.interpolate)
             }
             Spacer()
             if !showSettings {
-                IconButton(systemName: "arrow.clockwise", help: "Refresh") {
+                IconButton(systemName: "arrow.clockwise", help: "Refresh", rotation: refreshTurns) {
+                    withAnimation(.spring(duration: 0.7, bounce: 0.3)) { refreshTurns += 360 }
                     usage.refresh()
                     Task { await limits.refresh() }
                 }
             }
-            IconButton(systemName: showSettings ? "xmark" : "slider.horizontal.3", help: "Settings") {
+            IconButton(systemName: showSettings ? "xmark" : "gearshape.fill", help: "Settings") {
                 showSettings.toggle()
             }
             IconButton(systemName: "power", help: "Quit") { NSApp.terminate(nil) }
         }
+        .padding(.horizontal, 2)
+    }
+
+    private var statusLine: String {
+        let busy = sessions.busyCount
+        if sessions.sessions.isEmpty { return "All quiet. Nothing running." }
+        if busy == 0 { return "All caught up" }
+        return busy == 1 ? "1 session working…" : "\(busy) sessions working…"
     }
 
     // MARK: Limits
 
-    private var sessionWindow: LimitWindow? { limits.windows.first { $0.id == "five_hour" } }
-    private var weekWindow: LimitWindow? { limits.windows.first { $0.id == "seven_day" } }
+    private var limitsCard: some View {
+        let session = limits.windows.first { $0.id == "five_hour" }
+        let week = limits.windows.first { $0.id == "seven_day" }
+        let extras = limits.windows.filter { !["five_hour", "seven_day"].contains($0.id) }
 
-    private var limitsSection: some View {
-        HStack(alignment: .center, spacing: 20) {
-            LimitDial(outer: sessionWindow?.utilization, inner: weekWindow?.utilization)
-
-            VStack(alignment: .leading, spacing: 14) {
-                if limits.windows.isEmpty {
-                    Text(limits.error ?? "Reading your plan limits…")
-                        .font(.small)
-                        .foregroundStyle(Palette.text3)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(limits.windows) { window in
-                        LimitLegendRow(window: window, color: legendColor(window))
-                    }
-                    if let error = limits.error {
-                        Text(error).font(.small).foregroundStyle(Palette.accent)
-                    }
+        return VStack(alignment: .leading, spacing: 14) {
+            CardTitle("Plan limits") {
+                if let error = limits.error {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(Palette.sun)
+                        .help(error)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if limits.windows.isEmpty {
+                Text(limits.error ?? "Checking your limits…")
+                    .font(.rounded(12))
+                    .foregroundStyle(Palette.text2)
+            } else {
+                HStack(spacing: 0) {
+                    LiquidBubble(percent: session?.utilization, title: "Session",
+                                 subtitle: session?.resetsAt.map(formatReset) ?? " ", base: Palette.blue)
+                        .frame(maxWidth: .infinity)
+                    LiquidBubble(percent: week?.utilization, title: "Week",
+                                 subtitle: week?.resetsAt.map(formatReset) ?? " ", base: Palette.mint)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(extras) { w in
+                    Chip(label: w.title, value: "\(Int(w.utilization.rounded()))%",
+                         color: Palette.level(w.utilization, base: Palette.mint))
+                }
+            }
         }
+        .card()
     }
 
-    private func legendColor(_ w: LimitWindow) -> Color {
-        switch w.id {
-        case "five_hour": return LimitDial.sessionColor(w.utilization)
-        case "seven_day": return Palette.sand
-        default: return Palette.text3
-        }
-    }
+    // MARK: Sessions
 
-    // MARK: Tasks
-
-    private var tasksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Eyebrow("Sessions") {
+    private var sessionsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CardTitle("Sessions") {
                 if !sessions.sessions.isEmpty {
-                    Text("\(sessions.busyCount) working · \(sessions.sessions.count - sessions.busyCount) waiting")
-                        .font(.small).foregroundStyle(Palette.text3)
+                    Text("\(sessions.sessions.count)")
+                        .font(.rounded(11, .bold))
+                        .foregroundStyle(Palette.blue)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Palette.blue.opacity(0.12)))
                 }
             }
             if sessions.sessions.isEmpty {
-                Text("Nothing running. Start `claude` in a terminal and it appears here.")
-                    .font(.small).foregroundStyle(Palette.text3)
+                HStack(spacing: 10) {
+                    Image(systemName: "moon.zzz.fill")
+                        .foregroundStyle(Palette.text3)
+                        .symbolEffect(.pulse)
+                    Text("Start `claude` in a terminal and it shows up here.")
+                        .font(.rounded(12))
+                        .foregroundStyle(Palette.text2)
+                }
+                .padding(.vertical, 4)
             } else {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    VStack(spacing: 4) {
+                    VStack(spacing: 2) {
                         ForEach(sessions.sessions) { session in
                             SessionRow(session: session, now: context.date)
                         }
@@ -128,101 +150,86 @@ struct PopoverView: View {
                 }
             }
         }
+        .card()
     }
 
     // MARK: Tokens
 
-    private var tokensSection: some View {
+    private var tokensCard: some View {
         let week = range == 1
         let summary = week ? usage.lastSevenDays : usage.today
+        let values = week ? usage.weekByDay : usage.todayByHour
         let models = week ? usage.weekByModel : usage.todayByModel
+        let hour = Calendar.current.component(.hour, from: Date())
 
-        return VStack(alignment: .leading, spacing: 14) {
-            Eyebrow("Tokens") { TextSwitch(options: ["Today", "7 days"], selection: $range) }
+        let bigNumber = hoveredBar.map { values.indices.contains($0) ? values[$0] : 0 } ?? summary.total
+        let caption: String = {
+            guard let i = hoveredBar else { return week ? "tokens this week" : "tokens today" }
+            return week ? "on \(weekdayLabels[i])" : String(format: "at %02d:00", i)
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            CardTitle("Tokens") {
+                PillToggle(options: ["Today", "Week"], selection: $range)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(formatTokens(summary.total))
-                    .font(.display(38))
-                    .foregroundStyle(Palette.text)
+                Text(formatTokens(bigNumber))
+                    .font(.rounded(32, .bold))
+                    .foregroundStyle(hoveredBar == nil ? Palette.text : Palette.coral)
                     .contentTransition(.numericText())
-                    .animation(.snappy, value: summary.total)
-                Text("tokens").font(.body13).foregroundStyle(Palette.text3)
-                Spacer()
-                Text("\(summary.messages.formatted()) replies")
-                    .font(.small).foregroundStyle(Palette.text3)
+                    .animation(.snappy(duration: 0.25), value: bigNumber)
+                Text(caption)
+                    .font(.rounded(12))
+                    .foregroundStyle(Palette.text2)
             }
 
-            if week {
-                BarChart(
-                    values: usage.weekByDay,
-                    labels: weekdayLabels,
-                    centerLabels: true,
-                    highlight: 6,
-                    tooltips: usage.weekByDay.map { formatTokens($0) }
-                )
-            } else {
-                let hour = Calendar.current.component(.hour, from: Date())
-                BarChart(
-                    values: usage.todayByHour,
-                    labels: ["00", "06", "12", "18"],
-                    highlight: hour,
-                    future: hour + 1,
-                    tooltips: usage.todayByHour.enumerated().map { String(format: "%02d:00 · ", $0.offset) + formatTokens($0.element) }
-                )
-            }
+            InteractiveBars(
+                values: values,
+                labels: week ? weekdayLabels : ["00", "06", "12", "18"],
+                current: week ? 6 : hour,
+                future: week ? nil : hour + 1,
+                hovered: $hoveredBar
+            )
+            .id(range) // regrow the bars when switching ranges
 
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    Stat(label: "Output", value: summary.output)
-                    Stat(label: "Input", value: summary.input)
-                    Stat(label: "Last 5 hours", value: usage.lastFiveHours.total)
+                    Chip(label: "Output", value: formatTokens(summary.output), color: Palette.coral)
+                    Chip(label: "Input", value: formatTokens(summary.input), color: Palette.blue)
                 }
                 GridRow {
-                    Stat(label: "Cache read", value: summary.cacheRead)
-                    Stat(label: "Cache write", value: summary.cacheWrite)
-                    Color.clear.frame(height: 1)
+                    Chip(label: "Cache", value: formatTokens(summary.cacheRead + summary.cacheWrite), color: Palette.sun)
+                    Chip(label: "Replies", value: summary.messages.formatted(), color: Palette.mint)
                 }
             }
 
-            if !models.isEmpty { ModelSplit(models: models).padding(.top, 2) }
+            if !models.isEmpty {
+                Text(modelLine(models))
+                    .font(.rounded(11))
+                    .foregroundStyle(Palette.text3)
+            }
         }
+        .card()
+    }
+
+    private func modelLine(_ models: [ModelUsage]) -> String {
+        let total = max(models.reduce(0) { $0 + $1.summary.total }, 1)
+        return models.prefix(3).map {
+            "\(prettyModelName($0.model)) \(Int((Double($0.summary.total) / Double(total) * 100).rounded()))%"
+        }.joined(separator: "  ·  ")
     }
 
     private var weekdayLabels: [String] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         return (0..<7).map { i in
-            let day = cal.date(byAdding: .day, value: i - 6, to: today)!
-            return day.formatted(.dateTime.weekday(.abbreviated))
+            cal.date(byAdding: .day, value: i - 6, to: today)!.formatted(.dateTime.weekday(.abbreviated))
         }
     }
 }
 
-// MARK: - Rows
-
-struct LimitLegendRow: View {
-    let window: LimitWindow
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 7) {
-                Circle().fill(color).frame(width: 6, height: 6)
-                Text(window.title).font(.body13).foregroundStyle(Palette.text)
-                Spacer(minLength: 4)
-                Text("\(Int(window.utilization.rounded()))%")
-                    .font(.body13.monospacedDigit())
-                    .foregroundStyle(Palette.text2)
-            }
-            if let reset = window.resetsAt {
-                Text(formatReset(reset))
-                    .font(.small)
-                    .foregroundStyle(Palette.text3)
-                    .padding(.leading, 13)
-            }
-        }
-    }
-}
+// MARK: - Session row
 
 struct SessionRow: View {
     let session: LiveSession
@@ -231,62 +238,77 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Group {
+            ZStack {
+                Circle()
+                    .fill((session.isBusy ? Palette.blue : Palette.mint).opacity(0.15))
+                    .frame(width: 32, height: 32)
                 if session.isBusy {
-                    PulsingDot()
+                    BouncingDots()
+                        .transition(.scale.combined(with: .opacity))
                 } else {
-                    Circle().strokeBorder(Palette.text3, lineWidth: 1).frame(width: 7, height: 7)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Palette.mint)
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
             }
-            .frame(width: 18, height: 18)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.displayName)
-                    .font(.body13.weight(.medium))
-                    .foregroundStyle(session.isBusy ? Palette.text : Palette.text2)
+                    .font(.rounded(13, .semibold))
+                    .foregroundStyle(Palette.text)
                     .lineLimit(1)
-                Text(session.shortFolder)
-                    .font(.small)
-                    .foregroundStyle(Palette.text3)
+                Text(detail)
+                    .font(.rounded(11))
+                    .foregroundStyle(session.isBusy ? Palette.blue : Palette.text2)
+                    .monospacedDigit()
                     .lineLimit(1)
-                    .truncationMode(.middle)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(session.isBusy ? "Working" : "Waiting")
-                    .font(.small)
-                    .foregroundStyle(session.isBusy ? Palette.accent : Palette.text3)
-                if let since = session.statusSince {
-                    Text(formatClock(now.timeIntervalSince(since)))
-                        .font(.small.monospacedDigit())
-                        .foregroundStyle(Palette.text3)
-                }
-            }
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Palette.text3)
+                .opacity(hovering ? 1 : 0)
+                .offset(x: hovering ? 0 : -6)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(session.isBusy || hovering ? Palette.surface : .clear)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(hovering ? Palette.bg : .clear)
         )
         .padding(.horizontal, -8)
-        .onHover { hovering = $0 }
-        .help(session.folder)
+        .contentShape(Rectangle())
+        .onHover { h in withAnimation(.spring(duration: 0.25)) { hovering = h } }
+        .onTapGesture {
+            if let cwd = session.cwd { NSWorkspace.shared.open(URL(fileURLWithPath: cwd)) }
+        }
+        .animation(.spring(duration: 0.45, bounce: 0.55), value: session.isBusy)
+        .help("Open \(session.folder) in Finder")
+    }
+
+    private var detail: String {
+        let elapsed = session.statusSince.map { formatClock(now.timeIntervalSince($0)) } ?? ""
+        return session.isBusy ? "Working · \(elapsed)" : "Done · \(session.shortFolder)"
     }
 }
 
-struct Stat: View {
-    let label: String
-    let value: Int
+// MARK: - Greeting
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10)).foregroundStyle(Palette.text3)
-            Text(formatTokens(value)).font(.body13.monospacedDigit()).foregroundStyle(Palette.text)
+struct Greeting {
+    let text: String
+    let symbol: String
+    let color: Color
+
+    static var now: Greeting {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12: return Greeting(text: "Good morning", symbol: "sun.max.fill", color: Palette.sun)
+        case 12..<17: return Greeting(text: "Good afternoon", symbol: "sun.haze.fill", color: Palette.sun)
+        case 17..<21: return Greeting(text: "Good evening", symbol: "sunset.fill", color: Palette.coral)
+        default: return Greeting(text: "Late night coding", symbol: "moon.stars.fill", color: Palette.blue)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -311,10 +333,10 @@ func formatClock(_ t: TimeInterval) -> String {
 
 func formatReset(_ date: Date) -> String {
     let s = date.timeIntervalSinceNow
-    if s <= 0 { return "Resetting now" }
+    if s <= 0 { return "resetting now" }
     if s < 24 * 3600 {
         let h = Int(s) / 3600, m = Int(s) % 3600 / 60
-        return h > 0 ? "Resets in \(h)h \(m)m" : "Resets in \(m)m"
+        return h > 0 ? "resets in \(h)h \(m)m" : "resets in \(m)m"
     }
-    return "Resets " + date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    return "resets " + date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
 }
