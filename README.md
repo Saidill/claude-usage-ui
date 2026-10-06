@@ -1,0 +1,70 @@
+# Claude Usage
+
+A small macOS menu bar app that keeps an eye on Claude Code for you.
+
+- **Plan limits**: how much of your session (5-hour) and weekly limit you've used, and when each resets.
+- **Sessions**: every running Claude Code session, live, with how long it has been working.
+- **A sound when Claude finishes**: plus a notification, so you can look away while it works.
+- **Tokens**: today and the last 7 days, by hour, by model, and split into input, output and cache.
+
+<p align="center">
+  <img src="docs/screenshot.png" width="344" alt="Claude Usage popover">
+</p>
+
+The menu bar icon is a small ring that fills up as you use your session limit. A dot appears in the middle while Claude is working.
+
+## Requirements
+
+- macOS 14 or later (built and tested on an M2 MacBook)
+- [Claude Code](https://claude.com/claude-code), logged in with a Claude subscription
+- Xcode Command Line Tools (`xcode-select --install`)
+
+## Install
+
+```bash
+git clone https://github.com/<your-username>/claude-usage-ui.git
+cd claude-usage-ui
+./scripts/build-app.sh
+cp -R ClaudeUsage.app /Applications/
+open /Applications/ClaudeUsage.app
+```
+
+Then click the ring in the menu bar → settings → turn on **Open at login**. From then on it starts by itself.
+
+If you change the code later, run `./scripts/build-app.sh` again and copy the new app into `/Applications`.
+
+## How it works
+
+Everything is read from files Claude Code already writes on your Mac. Nothing is sent anywhere, apart from one request for your plan limits.
+
+| What | Where it comes from |
+| --- | --- |
+| Sessions and the finish sound | `~/.claude/sessions/*.json`. Each running session has a `status`, and a change from `busy` to anything else means Claude finished. Checked every second. |
+| Token counts | `~/.claude/projects/**/*.jsonl` transcripts. Only new lines are read, every 2 seconds. |
+| Plan limits | `GET https://api.anthropic.com/api/oauth/usage`, using the login token Claude Code keeps in your Keychain. Refreshed every minute. |
+
+The plan-limits endpoint is **unofficial**: it's the same one Claude Code's `/usage` command uses, and Anthropic may change it. If it stops working, the app says so and everything else keeps working.
+
+Token counts cover Claude Code only, not chats on claude.ai or the Claude desktop app.
+
+## Project layout
+
+```
+Sources/ClaudeUsage/
+  ClaudeUsageApp.swift     app entry point and menu bar icon
+  SessionMonitor.swift     watches running sessions and detects when one finishes
+  UsageTracker.swift       reads transcripts and adds up tokens
+  PlanLimitClient.swift    fetches plan limits
+  Notifier.swift           finish sound and notification
+  Views/                   popover, settings and shared styling
+scripts/build-app.sh       builds ClaudeUsage.app
+```
+
+## Development
+
+```bash
+swift build                 # compile
+./scripts/build-app.sh      # build the .app bundle
+```
+
+No Xcode project is needed. It's a plain Swift package.

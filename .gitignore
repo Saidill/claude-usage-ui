@@ -1,0 +1,16 @@
+# Build output
+.build/
+ClaudeUsage.app/
+*.dSYM/
+
+# Swift Package Manager / Xcode
+.swiftpm/
+Package.resolved
+xcuserdata/
+DerivedData/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
