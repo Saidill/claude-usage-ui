@@ -6,13 +6,16 @@ struct SettingsView: View {
     @AppStorage(Settings.soundEnabledKey) private var soundEnabled = true
     @AppStorage(Settings.notifyKey) private var notificationsEnabled = true
     @AppStorage(Settings.menuBarModeKey) private var menuBarMode = MenuBarMode.tasks.rawValue
+    @AppStorage(Settings.limitAlertsKey) private var limitAlerts = true
+    @AppStorage(Settings.limitThresholdKey) private var limitThreshold = 80
+    @AppStorage(Settings.resetPingKey) private var resetPing = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
     @State private var previewBounce = 0
 
     var body: some View {
         VStack(spacing: 12) {
-            section("When Claude finishes", symbol: "bell.fill", color: Palette.coral) {
+            section("When Claude finishes", symbol: "bell.fill", color: Palette.purple) {
                 row("Play a sound") { toggle($soundEnabled) }
                 row("Sound") {
                     HStack(spacing: 6) {
@@ -27,7 +30,7 @@ struct SettingsView: View {
                             Notifier.shared.playSound(soundName)
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
-                                .foregroundStyle(Palette.coral)
+                                .foregroundStyle(Palette.purple)
                                 .symbolEffect(.bounce, value: previewBounce)
                         }
                         .buttonStyle(.plain)
@@ -39,7 +42,21 @@ struct SettingsView: View {
                 row("Show a notification") { toggle($notificationsEnabled) }
             }
 
-            section("Menu bar", symbol: "menubar.rectangle", color: Palette.blue) {
+            section("Limit alerts", symbol: "gauge.with.dots.needle.67percent", color: Palette.sun) {
+                row("Warn me near the limit") { toggle($limitAlerts) }
+                row("At") {
+                    Picker("", selection: $limitThreshold) {
+                        ForEach([70, 80, 90, 95], id: \.self) { Text("\($0)%").tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                .disabled(!limitAlerts && !resetPing)
+                .opacity(limitAlerts || resetPing ? 1 : 0.4)
+                row("Ping when the session limit resets") { toggle($resetPing) }
+            }
+
+            section("Menu bar", symbol: "menubar.rectangle", color: Palette.purple) {
                 row("Next to the icon") {
                     Picker("", selection: $menuBarMode) {
                         ForEach(MenuBarMode.allCases) { Text($0.title).tag($0.rawValue) }
@@ -49,7 +66,7 @@ struct SettingsView: View {
                 }
             }
 
-            section("System", symbol: "power.circle.fill", color: Palette.mint) {
+            section("System", symbol: "power.circle.fill", color: Palette.limeInk) {
                 row("Open at login") {
                     toggle($launchAtLogin)
                         .onChange(of: launchAtLogin) { _, enabled in
@@ -101,6 +118,6 @@ struct SettingsView: View {
     }
 
     private func toggle(_ binding: Binding<Bool>) -> some View {
-        Toggle("", isOn: binding).toggleStyle(.switch).controlSize(.mini).tint(Palette.blue).labelsHidden()
+        Toggle("", isOn: binding).toggleStyle(.switch).controlSize(.mini).tint(Palette.purple).labelsHidden()
     }
 }

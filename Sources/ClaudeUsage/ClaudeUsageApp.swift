@@ -5,6 +5,7 @@ struct ClaudeUsageApp: App {
     @StateObject private var sessions = SessionMonitor()
     @StateObject private var usage = UsageTracker()
     @StateObject private var limits = PlanLimitClient()
+    @StateObject private var recent = RecentSessionStore()
     @AppStorage(Settings.menuBarModeKey) private var menuBarMode = MenuBarMode.tasks.rawValue
 
     var body: some Scene {
@@ -13,8 +14,9 @@ struct ClaudeUsageApp: App {
                 .environmentObject(sessions)
                 .environmentObject(usage)
                 .environmentObject(limits)
+                .environmentObject(recent)
         } label: {
-            MenuBarLabel(sessions: sessions, limits: limits, animator: sessions.menuBarAnimator,
+            MenuBarLabel(sessions: sessions, limits: limits,
                          mode: MenuBarMode(rawValue: menuBarMode) ?? .tasks)
         }
         .menuBarExtraStyle(.window)
@@ -24,7 +26,6 @@ struct ClaudeUsageApp: App {
 struct MenuBarLabel: View {
     @ObservedObject var sessions: SessionMonitor
     @ObservedObject var limits: PlanLimitClient
-    @ObservedObject var animator: MenuBarAnimator
     let mode: MenuBarMode
 
     var body: some View {
@@ -41,8 +42,7 @@ struct MenuBarLabel: View {
 
     private func icon(busy: Int) -> NSImage {
         if sessions.celebrating { return MenuBarIcon.done() }
-        if busy > 0 { return MenuBarIcon.spinner(phase: animator.phase) }
-        return MenuBarIcon.ring(fraction: (limits.fiveHourPercent ?? 0) / 100)
+        return MenuBarIcon.ring(fraction: (limits.fiveHourPercent ?? 0) / 100, dot: busy > 0)
     }
 }
 
@@ -62,4 +62,7 @@ enum Settings {
     static let notifyKey = "notificationsEnabled"
     static let soundEnabledKey = "soundEnabled"
     static let menuBarModeKey = "menuBarMode"
+    static let limitAlertsKey = "limitAlertsEnabled"
+    static let limitThresholdKey = "limitAlertThreshold"
+    static let resetPingKey = "resetPingEnabled"
 }

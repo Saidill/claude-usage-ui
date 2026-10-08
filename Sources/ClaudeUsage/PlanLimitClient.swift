@@ -75,8 +75,45 @@ final class PlanLimitClient: ObservableObject {
             windows = Self.parse(json)
             error = windows.isEmpty ? "No limit data returned." : nil
             lastUpdated = Date()
+            checkAlerts()
         } catch {
             self.error = "Plan limits unavailable (offline?)."
+        }
+    }
+
+    /// Warns once per reset window when a limit crosses the threshold, and schedules a ping for when the session limit resets.
+    private func checkAlerts() {
+        let defaults = UserDefaults.standard
+        let threshold = Double(defaults.integer(forKey: Settings.limitThresholdKey))
+        let now = Date()
+
+        if defaults.bool(forKey: Settings.limitAlertsKey) {
+            for w in windows where ["five_hour", "seven_day"].contains(w.id) && w.utilization >= threshold {
+                let key = "alerted.\(w.id).\(Int(w.resetsAt?.timeIntervalSince1970 ?? 0))"
+                guard !defaults.bool(forKey: key) else { continue }
+                defaults.set(true, forKey: key)
+                let reset = w.resetsAt.map { ", " + formatReset($0) } ?? ""
+                Notifier.shared.notify(title: "\(w.title) limit at \(Int(w.utilization.rounded()))%",
+                                       body: "Heads up: you're close to your \(w.title.lowercased()) limit\(reset).")
+            }
+            // Forget alerts for windows that have already reset.
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("alerted.") {
+                if let epoch = key.split(separator: ".").last.flatMap({ Double($0) }), epoch > 0,
+                   Date(timeIntervalSince1970: epoch) < now {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+
+        if let session = windows.first(where: { $0.id == "five_hour" }) {
+            if defaults.bool(forKey: Settings.resetPingKey), session.utilization >= threshold,
+               let reset = session.resetsAt, reset > now {
+                Notifier.shared.notify(id: "reset.five_hour", title: "Your session limit has reset",
+                                       body: "Back to full speed ✨", at: reset,
+                                       sound: defaults.bool(forKey: Settings.soundEnabledKey))
+            } else {
+                Notifier.shared.cancel(id: "reset.five_hour")
+            }
         }
     }
 

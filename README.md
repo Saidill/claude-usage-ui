@@ -1,15 +1,21 @@
 # Claude Usage
 
-A small macOS menu bar app that keeps an eye on Claude Code for you.
+A small macOS menu bar app that keeps an eye on Claude Code for you, and gets you back to work faster.
 
-- **Plan limits**: how much of your session (5-hour) and weekly limit you've used, and when each resets.
-- **Sessions**: every running Claude Code session, live, with how long it has been working.
-- **A sound when Claude finishes**: plus a notification, so you can look away while it works.
-- **Tokens**: today and the last 7 days, by hour, by model, and split into input, output and cache.
+The popover has three tabs:
 
-The menu bar icon is a small ring that fills up as you use your session limit. It spins while Claude is working and turns into a check mark when a session finishes.
+- **Now**: your session (5-hour) and weekly plan limits, and every running Claude Code session. **Click a session to jump to it**: its Terminal or iTerm2 tab comes to the front, or its VS Code / Cursor window.
+- **Recent**: your last conversations, titled the way Claude Code titles them. **Click one to resume it** in a new Terminal window (`claude --resume`).
+- **Usage**: tokens today and over the last 7 days, by hour, by model, and split into input, output and cache.
 
-A few small touches: the limit bubbles fill with moving water, hovering a bar in the token chart shows that hour's number, clicking a session opens its folder in Finder, and finished sessions get a little confetti.
+And in the background:
+
+- **A sound when Claude finishes**, plus a notification, so you can look away while it works.
+- **Limit alerts**: a heads-up when your session or weekly limit passes 80% (adjustable), and a ping the moment your session limit resets.
+
+The menu bar icon is a small ring that fills up as you use your session limit. It shows a "working" ring while Claude is busy and a check mark when a session finishes.
+
+It's built to stay light: nothing animates unless something changes, past sessions are only read when you open the Recent tab, and token counts refresh every 15 seconds (and whenever you open the popover).
 
 ## Requirements
 
@@ -39,7 +45,9 @@ Everything is read from files Claude Code already writes on your Mac. Nothing is
 | --- | --- |
 | Sessions and the finish sound | `~/.claude/sessions/*.json`. Each running session has a `status`, and a change from `busy` to anything else means Claude finished. Checked every second. |
 | Token counts | `~/.claude/projects/**/*.jsonl` transcripts. Only new lines are read, every 2 seconds. |
-| Plan limits | `GET https://api.anthropic.com/api/oauth/usage`, using the login token Claude Code keeps in your Keychain. Refreshed every minute. |
+| Plan limits and alerts | `GET https://api.anthropic.com/api/oauth/usage`, using the login token Claude Code keeps in your Keychain. Refreshed every minute. |
+| Recent sessions | The newest transcripts in `~/.claude/projects`. Only the last 64 KB of each file is read, for its title and folder. |
+| Jump to session | Finds the app that owns the session's process. For Terminal and iTerm2 it selects the tab by its TTY using AppleScript; macOS asks once for permission. |
 
 The plan-limits endpoint is **unofficial**: it's the same one Claude Code's `/usage` command uses, and Anthropic may change it. If it stops working, the app says so and everything else keeps working.
 
@@ -53,7 +61,9 @@ Sources/ClaudeUsage/
   SessionMonitor.swift     watches running sessions and detects when one finishes
   UsageTracker.swift       reads transcripts and adds up tokens
   PlanLimitClient.swift    fetches plan limits
-  Notifier.swift           finish sound and notification
+  Notifier.swift           finish sound and notifications
+  RecentSessions.swift     past sessions for the Recent tab
+  TerminalLauncher.swift   jump to a session's terminal, resume a past session
   Views/                   popover, settings, colours and animated components
 scripts/build-app.sh       builds ClaudeUsage.app
 ```

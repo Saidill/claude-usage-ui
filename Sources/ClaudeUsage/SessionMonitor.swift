@@ -45,7 +45,6 @@ final class SessionMonitor: ObservableObject {
     /// True for a few seconds after a session finishes; the menu bar shows a check mark.
     @Published private(set) var celebrating = false
 
-    let menuBarAnimator = MenuBarAnimator()
     private var celebrateTask: Task<Void, Never>?
 
     var busyCount: Int { sessions.filter(\.isBusy).count }
@@ -101,7 +100,6 @@ final class SessionMonitor: ObservableObject {
         firstScan = false
 
         if found != sessions { sessions = found }
-        menuBarAnimator.setActive(busyCount > 0 && !celebrating)
     }
 
     private func celebrate() {
@@ -112,7 +110,6 @@ final class SessionMonitor: ObservableObject {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self else { return }
             self.celebrating = false
-            self.menuBarAnimator.setActive(self.busyCount > 0)
         }
     }
 

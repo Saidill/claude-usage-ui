@@ -24,6 +24,9 @@ final class Notifier {
             Settings.soundKey: Self.chime,
             Settings.soundEnabledKey: true,
             Settings.notifyKey: true,
+            Settings.limitAlertsKey: true,
+            Settings.limitThresholdKey: 80,
+            Settings.resetPingKey: true,
         ])
         if canNotify {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -43,13 +46,28 @@ final class Notifier {
     func taskFinished(_ sessionName: String) {
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: Settings.soundEnabledKey) { playSound() }
-        guard canNotify, defaults.bool(forKey: Settings.notifyKey) else { return }
+        guard defaults.bool(forKey: Settings.notifyKey) else { return }
+        notify(title: "Claude is done", body: "\(sessionName) finished and is waiting for you.")
+    }
 
+    /// Shows a notification now, or at `date` when given. Reusing an `id` replaces the pending one.
+    func notify(id: String = UUID().uuidString, title: String, body: String, at date: Date? = nil, sound: Bool = false) {
+        guard canNotify else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Claude is done"
-        content.body = "\(sessionName) finished and is waiting for you."
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        content.title = title
+        content.body = body
+        if sound { content.sound = .default }
+        let trigger = date.map {
+            UNCalendarNotificationTrigger(
+                dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: $0),
+                repeats: false)
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    func cancel(id: String) {
+        guard canNotify else { return }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
     }
 
     /// Soft two-note bell (A5 then E6): sine partials with exponential decay, as an in-memory 16-bit mono WAV.

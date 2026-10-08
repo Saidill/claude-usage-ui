@@ -4,19 +4,25 @@ import SwiftUI
 // MARK: - Colours & type
 
 enum Palette {
-    static let bg = Color.dynamic(light: 0xF4F6FB, dark: 0x13151B)
-    static let card = Color.dynamic(light: 0xFFFFFF, dark: 0x1D2028)
-    static let line = Color.dynamic(light: 0xECEFF5, dark: 0x2A2E39)
-    static let text = Color.dynamic(light: 0x1B1F2E, dark: 0xF2F3F7)
-    static let text2 = Color.dynamic(light: 0x676D82, dark: 0xA3A8BA)
-    static let text3 = Color.dynamic(light: 0xA6ABBB, dark: 0x6A7084)
+    static let bg = Color.dynamic(light: 0xF6F3FF, dark: 0x120D1F)
+    static let card = Color.dynamic(light: 0xFFFFFF, dark: 0x1E1731)
+    static let line = Color.dynamic(light: 0xECE6FB, dark: 0x2D2445)
+    static let text = Color.dynamic(light: 0x1B1033, dark: 0xF4F0FF)
+    static let text2 = Color.dynamic(light: 0x6B6285, dark: 0xADA4C7)
+    static let text3 = Color.dynamic(light: 0xA9A1C2, dark: 0x6E658A)
 
-    static let blue = Color.dynamic(light: 0x3D7BFF, dark: 0x5B8FFF)
-    static let mint = Color.dynamic(light: 0x14C495, dark: 0x2EE0B0)
-    static let sun = Color.dynamic(light: 0xFFB020, dark: 0xFFC247)
-    static let coral = Color.dynamic(light: 0xFF5C7C, dark: 0xFF7590)
+    /// Tech purple: the main accent.
+    static let purple = Color.dynamic(light: 0x7C3AED, dark: 0x9D6BFF)
+    /// Cyber lime: for fills (bars, dots, badges). Too bright to read as text on white; use `limeInk` for that.
+    static let lime = Color.dynamic(light: 0xB8F000, dark: 0xCCFF33)
+    /// Lime that stays readable as text or icons.
+    static let limeInk = Color.dynamic(light: 0x5C8A00, dark: 0xCCFF33)
+    /// Text or icons placed on a lime fill.
+    static let onLime = Color(nsColor: NSColor(hex: 0x1B1033))
+    static let sun = Color.dynamic(light: 0xFFA412, dark: 0xFFC247)
+    static let coral = Color.dynamic(light: 0xFF4D8D, dark: 0xFF6FA5)
 
-    static let confetti: [Color] = [blue, mint, sun, coral]
+    static let confetti: [Color] = [purple, lime, sun, coral]
 
     /// Base colour while usage is comfortable, then sunny, then coral as it gets close to the limit.
     static func level(_ percent: Double, base: Color) -> Color {
@@ -62,7 +68,7 @@ extension View {
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Palette.card)
-                    .shadow(color: .black.opacity(0.05), radius: 10, y: 3)
+                    .shadow(color: Palette.purple.opacity(0.08), radius: 12, y: 4)
             )
     }
 }
@@ -103,7 +109,7 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(hovering ? Palette.blue : Palette.text2)
+                .foregroundStyle(hovering ? Palette.purple : Palette.text2)
                 .rotationEffect(.degrees(rotation))
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(Palette.card))
@@ -119,6 +125,8 @@ struct IconButton: View {
 struct PillToggle: View {
     let options: [String]
     @Binding var selection: Int
+    /// Stretch the segments to fill the available width (used for the main tab bar).
+    var fill = false
     @Namespace private var ns
 
     var body: some View {
@@ -128,10 +136,11 @@ struct PillToggle: View {
                     .font(.rounded(11, .semibold))
                     .foregroundStyle(selection == i ? .white : Palette.text2)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, fill ? 6 : 4)
+                    .frame(maxWidth: fill ? .infinity : nil)
                     .background {
                         if selection == i {
-                            Capsule().fill(Palette.blue).matchedGeometryEffect(id: "pill", in: ns)
+                            Capsule().fill(Palette.purple).matchedGeometryEffect(id: "pill", in: ns)
                         }
                     }
                     .contentShape(Capsule())
@@ -164,109 +173,53 @@ struct Chip: View {
     }
 }
 
-// MARK: - Animated pieces
+// MARK: - Gauges
 
-/// Circle that fills with gently moving water up to `percent`.
-struct LiquidBubble: View {
-    let percent: Double?
+/// Slim progress bar for one plan limit. It only animates when the value changes.
+struct LimitBar: View {
     let title: String
+    let percent: Double?
     let subtitle: String
     let base: Color
 
-    @State private var hovering = false
-    // Fill animates from `from` to `percent`, starting at `start` (bubble creation, then each change).
-    @State private var from = 0.0
-    @State private var start = Date()
-
-    private var color: Color { Palette.level(percent ?? 0, base: base) }
+    private var value: Double { min(max(percent ?? 0, 0), 100) }
+    private var color: Color { Palette.level(value, base: base) }
 
     var body: some View {
-        VStack(spacing: 8) {
-            TimelineView(.animation(minimumInterval: 1 / 40)) { context in
-                bubble(at: context.date)
-            }
-            .frame(width: 96, height: 96)
-            .overlay(Circle().strokeBorder(color.opacity(0.3), lineWidth: 2))
-            .scaleEffect(hovering ? 1.07 : 1)
-            .onHover { h in withAnimation(.spring(duration: 0.35, bounce: 0.55)) { hovering = h } }
-            .onChange(of: percent) { old, _ in
-                from = old ?? 0
-                start = Date()
-            }
-
-            VStack(spacing: 1) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(title).font(.rounded(13, .semibold)).foregroundStyle(Palette.text)
                 Text(subtitle).font(.rounded(11)).foregroundStyle(Palette.text2)
+                Spacer()
+                Text(percent == nil ? "–" : "\(Int(value.rounded()))%")
+                    .font(.rounded(13, .bold))
+                    .foregroundStyle(value < 70 ? Palette.text : color)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
             }
-        }
-    }
-
-    private func bubble(at now: Date) -> some View {
-        let progress = min(1, max(0, now.timeIntervalSince(start) / 1.4))
-        let eased = 1 - pow(1 - progress, 3)
-        let value = from + ((percent ?? 0) - from) * eased
-        let phase = now.timeIntervalSinceReferenceDate * (hovering ? 3.2 : 1.4)
-        let level = value / 100
-
-        return ZStack {
-            Circle().fill(color.opacity(0.12))
-            Wave(level: level, phase: phase + 1.8, amplitude: 4.5).fill(color.opacity(0.35))
-            Wave(level: level, phase: phase, amplitude: 3.5).fill(color)
-            percentLabel(value).foregroundStyle(Palette.text)
-            percentLabel(value).foregroundStyle(.white)
-                .mask(Wave(level: level, phase: phase, amplitude: 3.5))
-        }
-        .clipShape(Circle())
-    }
-
-    private func percentLabel(_ value: Double) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 1) {
-            Text(percent == nil ? "–" : "\(Int(value.rounded()))").font(.rounded(26, .bold)).monospacedDigit()
-            Text("%").font(.rounded(12, .bold))
-        }
-    }
-}
-
-struct Wave: Shape {
-    var level: Double  // 0...1
-    var phase: Double
-    var amplitude: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard level > 0 else { return path }
-        // Calm the wave near empty/full so it never spills past the edges.
-        let calm = CGFloat(min(1, min(level, 1 - level) * 8 + 0.15))
-        let amp = amplitude * calm
-        let baseline = rect.maxY - rect.height * CGFloat(level)
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        for x in stride(from: CGFloat(0), through: rect.width, by: 2) {
-            let angle = Double(x / rect.width) * 2 * .pi * 1.2 + phase
-            let y = baseline + CGFloat(sin(angle)) * amp
-            path.addLine(to: CGPoint(x: rect.minX + x, y: y))
-        }
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-/// Three dots hopping one after another, like someone typing.
-struct BouncingDots: View {
-    var color: Color = Palette.blue
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 40)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 3) {
-                ForEach(0..<3) { i in
-                    Circle()
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.line)
+                    Capsule()
                         .fill(color)
-                        .frame(width: 5, height: 5)
-                        .offset(y: -abs(sin(t * 5 - Double(i) * 0.7)) * 4)
+                        .frame(width: value > 0 ? max(8, geo.size.width * value / 100) : 0)
                 }
             }
+            .frame(height: 8)
         }
+        .animation(.snappy(duration: 0.5), value: value)
+    }
+}
+
+/// Static "working" badge for a busy session row.
+struct WorkingBadge: View {
+    var hovering = false
+
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 13, weight: .heavy))
+            .foregroundStyle(Palette.purple)
+            .symbolEffect(.pulse, isActive: hovering)
     }
 }
 
@@ -324,9 +277,9 @@ struct InteractiveBars: View {
     }
 
     private func color(_ i: Int) -> Color {
-        if hovered == i { return Palette.coral }
-        if i == current { return Palette.blue }
-        return Palette.blue.opacity(0.35)
+        if hovered == i { return Palette.lime }
+        if i == current { return Palette.purple }
+        return Palette.purple.opacity(0.3)
     }
 }
 
@@ -387,39 +340,17 @@ struct ConfettiView: View {
 
 // MARK: - Menu bar
 
-/// Drives the spinning menu bar icon while a session is working.
-@MainActor
-final class MenuBarAnimator: ObservableObject {
-    @Published private(set) var phase = 0
-    private var timer: Timer?
-
-    func setActive(_ active: Bool) {
-        if active, timer == nil {
-            timer = Timer.scheduledTimer(withTimeInterval: 1 / 12, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.phase += 1 }
-            }
-        } else if !active {
-            timer?.invalidate()
-            timer = nil
-        }
-    }
-}
-
 enum MenuBarIcon {
-    /// Ring that fills with the session limit.
-    static func ring(fraction: Double) -> NSImage {
+    /// Ring that fills with the session limit. `dot` adds a centre dot while Claude is working.
+    static func ring(fraction: Double, dot: Bool = false) -> NSImage {
         draw { center, radius in
             stroke(arcFrom: 90, sweep: 360, center: center, radius: radius, alpha: 0.3)
             let f = min(max(fraction, 0), 1)
             if f > 0 { stroke(arcFrom: 90, sweep: 360 * f, center: center, radius: radius, alpha: 1) }
-        }
-    }
-
-    /// Spinner: a short arc that travels around the ring.
-    static func spinner(phase: Int) -> NSImage {
-        draw { center, radius in
-            stroke(arcFrom: 90, sweep: 360, center: center, radius: radius, alpha: 0.3)
-            stroke(arcFrom: 90 - Double(phase % 12) * 30, sweep: 100, center: center, radius: radius, alpha: 1)
+            if dot {
+                NSColor.black.setFill()
+                NSBezierPath(ovalIn: NSRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4)).fill()
+            }
         }
     }
 

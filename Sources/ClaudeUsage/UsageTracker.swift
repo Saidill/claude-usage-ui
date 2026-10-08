@@ -53,7 +53,8 @@ final class UsageTracker: ObservableObject {
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        // The popover also refreshes when it opens, so a slow timer is enough.
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
