@@ -12,10 +12,11 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
     @State private var previewBounce = 0
+    @EnvironmentObject var display: DisplayModeController
 
     var body: some View {
         VStack(spacing: 12) {
-            section("When Claude finishes", symbol: "bell.fill", color: Palette.purple) {
+            section("When Claude finishes", symbol: "bell.fill", color: Palette.silver) {
                 row("Play a sound") { toggle($soundEnabled) }
                 row("Sound") {
                     HStack(spacing: 6) {
@@ -30,8 +31,8 @@ struct SettingsView: View {
                             Notifier.shared.playSound(soundName)
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
-                                .foregroundStyle(Palette.purple)
-                                .symbolEffect(.bounce, value: previewBounce)
+                                .foregroundStyle(Palette.silver)
+                                .symbolEffect(.variableColor.iterative, options: .nonRepeating, value: previewBounce)
                         }
                         .buttonStyle(.plain)
                         .help("Preview")
@@ -42,7 +43,7 @@ struct SettingsView: View {
                 row("Show a notification") { toggle($notificationsEnabled) }
             }
 
-            section("Limit alerts", symbol: "gauge.with.dots.needle.67percent", color: Palette.sun) {
+            section("Limit alerts", symbol: "gauge.with.dots.needle.67percent", color: Palette.silver) {
                 row("Warn me near the limit") { toggle($limitAlerts) }
                 row("At") {
                     Picker("", selection: $limitThreshold) {
@@ -56,7 +57,22 @@ struct SettingsView: View {
                 row("Ping when the session limit resets") { toggle($resetPing) }
             }
 
-            section("Menu bar", symbol: "menubar.rectangle", color: Palette.purple) {
+            section("Display", symbol: "macbook", color: Palette.silver) {
+                row("Show the app in") {
+                    Picker("", selection: $display.setting) {
+                        ForEach(DisplayMode.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                Text("Auto uses the notch on your MacBook screen, and the menu bar when an external monitor is connected.")
+                    .font(.app(11))
+                    .foregroundStyle(Palette.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 6)
+            }
+
+            section("Menu bar", symbol: "menubar.rectangle", color: Palette.silver) {
                 row("Next to the icon") {
                     Picker("", selection: $menuBarMode) {
                         ForEach(MenuBarMode.allCases) { Text($0.title).tag($0.rawValue) }
@@ -66,7 +82,7 @@ struct SettingsView: View {
                 }
             }
 
-            section("System", symbol: "power.circle.fill", color: Palette.limeInk) {
+            section("System", symbol: "power.circle.fill", color: Palette.silver) {
                 row("Open at login") {
                     toggle($launchAtLogin)
                         .onChange(of: launchAtLogin) { _, enabled in
@@ -79,12 +95,16 @@ struct SettingsView: View {
                         }
                 }
                 if let loginError {
-                    Text(loginError).font(.rounded(11)).foregroundStyle(Palette.coral).padding(.bottom, 8)
+                    Text(loginError).font(.app(11)).foregroundStyle(Palette.rose).padding(.bottom, 8)
+                }
+                row("Quit Claude Usage") {
+                    Button("Quit") { NSApp.terminate(nil) }
+                        .controlSize(.small)
                 }
             }
 
             Text("Token counts come from Claude Code's local history. Plan limits use the same unofficial endpoint as /usage, so they may stop working if Anthropic changes it.")
-                .font(.rounded(11))
+                .font(.app(11))
                 .foregroundStyle(Palette.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
@@ -96,11 +116,15 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(color)
                     .frame(width: 24, height: 24)
-                    .background(Circle().fill(color.opacity(0.15)))
-                Text(title).font(.rounded(14, .bold)).foregroundStyle(Palette.text)
+                    .background(Circle().fill(Palette.glass))
+                    .overlay(Circle().strokeBorder(Palette.line, lineWidth: 1))
+                Text(title.uppercased())
+                    .font(.app(10.5, .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Palette.text2)
             }
             .padding(.bottom, 4)
             content()
@@ -110,7 +134,7 @@ struct SettingsView: View {
 
     private func row<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
         HStack {
-            Text(label).font(.rounded(13)).foregroundStyle(Palette.text)
+            Text(label).font(.app(12.5)).foregroundStyle(Palette.text)
             Spacer()
             control()
         }
@@ -118,6 +142,6 @@ struct SettingsView: View {
     }
 
     private func toggle(_ binding: Binding<Bool>) -> some View {
-        Toggle("", isOn: binding).toggleStyle(.switch).controlSize(.mini).tint(Palette.purple).labelsHidden()
+        Toggle("", isOn: binding).toggleStyle(.switch).controlSize(.mini).tint(Palette.steel).labelsHidden()
     }
 }

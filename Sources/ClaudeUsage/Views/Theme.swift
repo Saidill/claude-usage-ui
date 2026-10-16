@@ -3,43 +3,55 @@ import SwiftUI
 
 // MARK: - Colours & type
 
+/// Black, silver and glass. Always dark, whatever the system appearance.
 enum Palette {
-    static let bg = Color.dynamic(light: 0xF6F3FF, dark: 0x120D1F)
-    static let card = Color.dynamic(light: 0xFFFFFF, dark: 0x1E1731)
-    static let line = Color.dynamic(light: 0xECE6FB, dark: 0x2D2445)
-    static let text = Color.dynamic(light: 0x1B1033, dark: 0xF4F0FF)
-    static let text2 = Color.dynamic(light: 0x6B6285, dark: 0xADA4C7)
-    static let text3 = Color.dynamic(light: 0xA9A1C2, dark: 0x6E658A)
+    /// Black tint laid over the blurred window background.
+    static let bg = Color.black.opacity(0.62)
+    /// Card fill: a faint sheet of glass.
+    static let glass = Color.white.opacity(0.045)
+    /// Row highlight inside a card.
+    static let hover = Color.white.opacity(0.07)
+    static let line = Color.white.opacity(0.10)
+    static let text = Color(hex: 0xF2F2F4)
+    static let text2 = Color(hex: 0x9A9AA2)
+    static let text3 = Color(hex: 0x5E5E66)
 
-    /// Tech purple: the main accent.
-    static let purple = Color.dynamic(light: 0x7C3AED, dark: 0x9D6BFF)
-    /// Cyber lime: for fills (bars, dots, badges). Too bright to read as text on white; use `limeInk` for that.
-    static let lime = Color.dynamic(light: 0xB8F000, dark: 0xCCFF33)
-    /// Lime that stays readable as text or icons.
-    static let limeInk = Color.dynamic(light: 0x5C8A00, dark: 0xCCFF33)
-    /// Text or icons placed on a lime fill.
-    static let onLime = Color(nsColor: NSColor(hex: 0x1B1033))
-    static let sun = Color.dynamic(light: 0xFFA412, dark: 0xFFC247)
-    static let coral = Color.dynamic(light: 0xFF4D8D, dark: 0xFF6FA5)
+    /// The main accent.
+    static let silver = Color(hex: 0xD4D7DD)
+    /// A darker, cooler second accent.
+    static let steel = Color(hex: 0x8E949E)
+    /// Text or icons placed on a silver fill.
+    static let onSilver = Color(hex: 0x111114)
+    static let amber = Color(hex: 0xE3B26A)
+    static let rose = Color(hex: 0xE07A72)
 
-    static let confetti: [Color] = [purple, lime, sun, coral]
+    /// Polished-metal fill for bars and the selected tab.
+    static let silverGradient = LinearGradient(colors: [Color(hex: 0xFAFAFC), Color(hex: 0xA7ACB4)],
+                                               startPoint: .top, endPoint: .bottom)
+    /// Hairline edge that catches light at the top, like the rim of a glass pane.
+    static let rim = LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.04)],
+                                    startPoint: .top, endPoint: .bottom)
 
-    /// Base colour while usage is comfortable, then sunny, then coral as it gets close to the limit.
+    static let confetti: [Color] = [.white, silver, steel, Color(hex: 0xB9BEC6)]
+
+    /// Base colour while usage is comfortable, then amber, then rose as it gets close to the limit.
     static func level(_ percent: Double, base: Color) -> Color {
         switch percent {
         case ..<70: return base
-        case ..<90: return sun
-        default: return coral
+        case ..<90: return amber
+        default: return rose
         }
     }
 }
 
+/// One set of curves so everything moves the same calm way.
+enum Motion {
+    static let smooth = Animation.smooth(duration: 0.28)
+    static let quick = Animation.snappy(duration: 0.18, extraBounce: 0)
+}
+
 extension Color {
-    static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(hex: dark) : NSColor(hex: light)
-        })
-    }
+    init(hex: UInt32) { self.init(nsColor: NSColor(hex: hex)) }
 }
 
 extension NSColor {
@@ -54,21 +66,34 @@ extension NSColor {
 }
 
 extension Font {
-    static func rounded(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
+    static func app(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
     }
 }
 
 // MARK: - Containers
+
+/// Frosted glass behind the whole window.
+struct GlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
 
 extension View {
     func card() -> some View {
         padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Palette.card)
-                    .shadow(color: Palette.purple.opacity(0.08), radius: 12, y: 4)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Palette.glass)
+                    .strokeBorder(Palette.rim, lineWidth: 1)
             )
     }
 }
@@ -84,7 +109,10 @@ struct CardTitle<Trailing: View>: View {
 
     var body: some View {
         HStack {
-            Text(text).font(.rounded(14, .bold)).foregroundStyle(Palette.text)
+            Text(text.uppercased())
+                .font(.app(10.5, .semibold))
+                .tracking(1.2)
+                .foregroundStyle(Palette.text2)
             Spacer()
             trailing
         }
@@ -97,7 +125,7 @@ extension CardTitle where Trailing == EmptyView {
 
 // MARK: - Controls
 
-/// Round toolbar button that pops a little on hover.
+/// Round glass toolbar button that brightens on hover.
 struct IconButton: View {
     let systemName: String
     let help: String
@@ -108,20 +136,20 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(hovering ? Palette.purple : Palette.text2)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(hovering ? Palette.text : Palette.text2)
                 .rotationEffect(.degrees(rotation))
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Palette.card))
-                .scaleEffect(hovering ? 1.12 : 1)
+                .background(Circle().fill(hovering ? Palette.hover : Palette.glass))
+                .overlay(Circle().strokeBorder(Palette.rim, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(.spring(duration: 0.3, bounce: 0.6)) { hovering = h } }
+        .onHover { h in withAnimation(Motion.quick) { hovering = h } }
         .help(help)
     }
 }
 
-/// Segmented control whose highlight pill slides between options.
+/// Segmented control whose silver pill glides between options.
 struct PillToggle: View {
     let options: [String]
     @Binding var selection: Int
@@ -133,24 +161,23 @@ struct PillToggle: View {
         HStack(spacing: 2) {
             ForEach(options.indices, id: \.self) { i in
                 Text(options[i])
-                    .font(.rounded(11, .semibold))
-                    .foregroundStyle(selection == i ? .white : Palette.text2)
+                    .font(.app(11, .medium))
+                    .foregroundStyle(selection == i ? Palette.onSilver : Palette.text2)
                     .padding(.horizontal, 10)
                     .padding(.vertical, fill ? 6 : 4)
                     .frame(maxWidth: fill ? .infinity : nil)
                     .background {
                         if selection == i {
-                            Capsule().fill(Palette.purple).matchedGeometryEffect(id: "pill", in: ns)
+                            Capsule().fill(Palette.silverGradient).matchedGeometryEffect(id: "pill", in: ns)
                         }
                     }
                     .contentShape(Capsule())
-                    .onTapGesture {
-                        withAnimation(.spring(duration: 0.35, bounce: 0.4)) { selection = i }
-                    }
+                    .onTapGesture { withAnimation(Motion.smooth) { selection = i } }
             }
         }
         .padding(2)
-        .background(Capsule().fill(Palette.line))
+        .background(Capsule().fill(Palette.glass))
+        .overlay(Capsule().strokeBorder(Palette.rim, lineWidth: 1))
     }
 }
 
@@ -161,69 +188,88 @@ struct Chip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 6, height: 6)
+            Circle().fill(color).frame(width: 5, height: 5)
             Text(label).foregroundStyle(Palette.text2)
             Spacer(minLength: 2)
-            Text(value).fontWeight(.semibold).foregroundStyle(Palette.text).monospacedDigit()
+            Text(value).fontWeight(.medium).foregroundStyle(Palette.text).monospacedDigit()
         }
-        .font(.rounded(11))
+        .font(.app(11))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Capsule().fill(color.opacity(0.12)))
+        .background(Capsule().fill(Palette.glass))
+        .overlay(Capsule().strokeBorder(Palette.line, lineWidth: 0.5))
     }
 }
 
 // MARK: - Gauges
 
-/// Slim progress bar for one plan limit. It only animates when the value changes.
+/// Slim progress bar for one plan limit. It glides when the value changes and shimmers while refreshing.
 struct LimitBar: View {
     let title: String
     let percent: Double?
     let subtitle: String
-    let base: Color
+    var shimmering = false
 
     private var value: Double { min(max(percent ?? 0, 0), 100) }
-    private var color: Color { Palette.level(value, base: base) }
+    private var warning: Color? { value < 70 ? nil : Palette.level(value, base: Palette.silver) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.rounded(13, .semibold)).foregroundStyle(Palette.text)
-                Text(subtitle).font(.rounded(11)).foregroundStyle(Palette.text2)
+                Text(title).font(.app(13, .medium)).foregroundStyle(Palette.text)
+                Text(subtitle).font(.app(11)).foregroundStyle(Palette.text3)
                 Spacer()
                 Text(percent == nil ? "–" : "\(Int(value.rounded()))%")
-                    .font(.rounded(13, .bold))
-                    .foregroundStyle(value < 70 ? Palette.text : color)
+                    .font(.app(15, .light))
+                    .foregroundStyle(warning ?? Palette.text)
                     .monospacedDigit()
                     .contentTransition(.numericText())
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Palette.line)
-                    Capsule()
-                        .fill(color)
-                        .frame(width: value > 0 ? max(8, geo.size.width * value / 100) : 0)
+                    Group {
+                        if let warning { Capsule().fill(warning) } else { Capsule().fill(Palette.silverGradient) }
+                    }
+                    .frame(width: value > 0 ? max(6, geo.size.width * value / 100) : 0)
+                    .overlay { if shimmering { Shimmer().clipShape(Capsule()) } }
                 }
             }
-            .frame(height: 8)
+            .frame(height: 6)
         }
-        .animation(.snappy(duration: 0.5), value: value)
+        .animation(Motion.smooth, value: value)
     }
 }
 
-/// Static "working" badge for a busy session row.
+/// A soft band of light that sweeps across its container.
+private struct Shimmer: View {
+    @State private var phase: CGFloat = -1
+
+    var body: some View {
+        GeometryReader { geo in
+            LinearGradient(colors: [.clear, .white.opacity(0.6), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: geo.size.width * 0.6)
+                .offset(x: phase * geo.size.width * 1.6)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) { phase = 1 }
+        }
+    }
+}
+
+/// "Working" badge for a busy session row: a slowly breathing ellipsis.
 struct WorkingBadge: View {
     var hovering = false
 
     var body: some View {
         Image(systemName: "ellipsis")
-            .font(.system(size: 13, weight: .heavy))
-            .foregroundStyle(Palette.purple)
-            .symbolEffect(.pulse, isActive: hovering)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(Palette.silver)
+            .symbolEffect(.pulse, isActive: true)
     }
 }
 
-/// Bar chart where bars spring up one by one; hovering a bar reports its index.
+/// Bar chart whose bars rise in one by one; hovering a bar reports its index.
 struct InteractiveBars: View {
     let values: [Int]
     /// Evenly spaced axis labels; values.count should be a multiple of labels.count.
@@ -246,7 +292,7 @@ struct InteractiveBars: View {
             HStack(spacing: 3) {
                 ForEach(labels.indices, id: \.self) { i in
                     Text(labels[i])
-                        .font(.rounded(9, .medium))
+                        .font(.app(9, .medium))
                         .foregroundStyle(Palette.text3)
                         .frame(maxWidth: .infinity, alignment: labels.count == values.count ? .center : .leading)
                 }
@@ -256,34 +302,33 @@ struct InteractiveBars: View {
     }
 
     private func bar(_ i: Int, maxValue: Int) -> some View {
-        let barHeight: CGFloat = values[i] > 0 ? max(5, CGFloat(values[i]) / CGFloat(maxValue) * height) : 0
+        let barHeight: CGFloat = values[i] > 0 ? max(4, CGFloat(values[i]) / CGFloat(maxValue) * height) : 0
         let isFuture = future.map { i >= $0 } ?? false
         return ZStack(alignment: .bottom) {
-            Capsule().fill(Palette.line.opacity(isFuture ? 0.5 : 1))
+            Capsule().fill(Palette.line.opacity(isFuture ? 0.4 : 0.8))
             Capsule()
                 .fill(color(i))
                 .frame(height: grown ? barHeight : 0)
-                .animation(.spring(duration: 0.7, bounce: 0.45).delay(Double(i) * 0.025), value: grown)
+                .animation(.smooth(duration: 0.4).delay(Double(i) * 0.008), value: grown)
         }
         .frame(height: height)
         .frame(maxWidth: .infinity)
-        .scaleEffect(x: hovered == i ? 1.3 : 1, y: 1, anchor: .bottom)
         .contentShape(Rectangle())
         .onHover { h in
-            withAnimation(.spring(duration: 0.25, bounce: 0.5)) {
+            withAnimation(Motion.quick) {
                 if h { hovered = i } else if hovered == i { hovered = nil }
             }
         }
     }
 
-    private func color(_ i: Int) -> Color {
-        if hovered == i { return Palette.lime }
-        if i == current { return Palette.purple }
-        return Palette.purple.opacity(0.3)
+    private func color(_ i: Int) -> AnyShapeStyle {
+        if hovered == i { return AnyShapeStyle(Color.white) }
+        if i == current { return AnyShapeStyle(Palette.silverGradient) }
+        return AnyShapeStyle(Palette.steel.opacity(0.35))
     }
 }
 
-/// A one-shot burst of confetti each time `trigger` changes.
+/// A gentle shower of silver flakes each time `trigger` changes.
 struct ConfettiView: View {
     let trigger: Int
 
@@ -293,7 +338,7 @@ struct ConfettiView: View {
 
     @State private var start: Date?
     @State private var pieces: [Piece] = []
-    private let lifetime = 1.8
+    private let lifetime = 2.4
 
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: start == nil)) { context in
@@ -303,9 +348,10 @@ struct ConfettiView: View {
                 guard t < lifetime else { return }
                 for p in pieces {
                     let x = size.width / 2 + p.vx * t
-                    let y = 60 + p.vy * t + 0.5 * 700 * t * t
+                    let y = 50 + p.vy * t + 0.5 * 320 * t * t
                     var piece = ctx
-                    piece.opacity = 1 - t / lifetime
+                    // Fade in quickly, then out slowly.
+                    piece.opacity = min(t / 0.2, 1) * (1 - t / lifetime)
                     piece.translateBy(x: x, y: y)
                     piece.rotate(by: .radians(p.spin * t))
                     let rect = CGRect(origin: CGPoint(x: -p.size.width / 2, y: -p.size.height / 2), size: p.size)
@@ -318,14 +364,14 @@ struct ConfettiView: View {
     }
 
     private func burst() {
-        pieces = (0..<60).map { _ in
-            let angle = Double.random(in: -Double.pi * 0.95 ... -Double.pi * 0.05)
-            let speed = Double.random(in: 180...420)
+        pieces = (0..<30).map { _ in
+            let angle = Double.random(in: -Double.pi * 0.9 ... -Double.pi * 0.1)
+            let speed = Double.random(in: 90...220)
             return Piece(
                 vx: cos(angle) * speed,
                 vy: sin(angle) * speed,
-                spin: Double.random(in: -10...10),
-                size: CGSize(width: Double.random(in: 5...9), height: Double.random(in: 3...6)),
+                spin: Double.random(in: -4...4),
+                size: CGSize(width: Double.random(in: 3...6), height: Double.random(in: 2...4)),
                 color: Palette.confetti.randomElement()!,
                 round: Bool.random()
             )

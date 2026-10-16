@@ -2,48 +2,27 @@ import SwiftUI
 
 @main
 struct ClaudeUsageApp: App {
-    @StateObject private var sessions = SessionMonitor()
-    @StateObject private var usage = UsageTracker()
-    @StateObject private var limits = PlanLimitClient()
-    @StateObject private var recent = RecentSessionStore()
-    @AppStorage(Settings.menuBarModeKey) private var menuBarMode = MenuBarMode.tasks.rawValue
+    init() {
+        // Black theme: keep window chrome, tooltips and system controls dark too.
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        // The menu bar icon and the notch are AppKit windows, managed by the display mode.
+        _ = DisplayModeController.shared
+        SelfTest.startIfRequested()
+    }
 
     var body: some Scene {
-        MenuBarExtra {
-            PopoverView()
-                .environmentObject(sessions)
-                .environmentObject(usage)
-                .environmentObject(limits)
-                .environmentObject(recent)
-        } label: {
-            MenuBarLabel(sessions: sessions, limits: limits,
-                         mode: MenuBarMode(rawValue: menuBarMode) ?? .tasks)
-        }
-        .menuBarExtraStyle(.window)
+        // Everything lives in the menu bar icon or the notch; this app has no regular windows.
+        SwiftUI.Settings { EmptyView() }
     }
 }
 
-struct MenuBarLabel: View {
-    @ObservedObject var sessions: SessionMonitor
-    @ObservedObject var limits: PlanLimitClient
-    let mode: MenuBarMode
-
-    var body: some View {
-        let busy = sessions.busyCount
-        let suffix: String = switch mode {
-        case .tasks: busy > 0 ? "\(busy)" : ""
-        case .fiveHour: limits.fiveHourPercent.map { "\(Int($0.rounded()))%" } ?? ""
-        }
-        HStack(spacing: 4) {
-            Image(nsImage: icon(busy: busy))
-            if !suffix.isEmpty { Text(suffix).monospacedDigit() }
-        }
-    }
-
-    private func icon(busy: Int) -> NSImage {
-        if sessions.celebrating { return MenuBarIcon.done() }
-        return MenuBarIcon.ring(fraction: (limits.fiveHourPercent ?? 0) / 100, dot: busy > 0)
-    }
+/// One copy of each model, shared by the menu bar popover and the notch.
+@MainActor
+enum AppModels {
+    static let sessions = SessionMonitor()
+    static let usage = UsageTracker()
+    static let limits = PlanLimitClient()
+    static let recent = RecentSessionStore()
 }
 
 enum MenuBarMode: String, CaseIterable, Identifiable {
@@ -65,4 +44,5 @@ enum Settings {
     static let limitAlertsKey = "limitAlertsEnabled"
     static let limitThresholdKey = "limitAlertThreshold"
     static let resetPingKey = "resetPingEnabled"
+    static let displayModeKey = "displayMode"
 }

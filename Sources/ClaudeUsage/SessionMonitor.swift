@@ -42,6 +42,8 @@ final class SessionMonitor: ObservableObject {
     @Published private(set) var sessions: [LiveSession] = []
     /// Increments every time a session finishes; drives the confetti.
     @Published private(set) var finishCount = 0
+    /// The session that finished most recently; the notch pop shows it.
+    private(set) var lastFinished: LiveSession?
     /// True for a few seconds after a session finishes; the menu bar shows a check mark.
     @Published private(set) var celebrating = false
 
@@ -90,7 +92,9 @@ final class SessionMonitor: ObservableObject {
         for session in found {
             let previous = lastStatus[session.pid]
             if !firstScan, previous == "busy", !session.isBusy {
-                Notifier.shared.taskFinished(session.displayName)
+                // The notch pops up its own "finished" card, so skip the banner there.
+                Notifier.shared.taskFinished(session.displayName, banner: !DisplayModeController.shared.isNotch)
+                lastFinished = session
                 celebrate()
             }
             lastStatus[session.pid] = session.status ?? ""

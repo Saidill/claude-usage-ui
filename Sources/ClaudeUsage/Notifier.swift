@@ -43,10 +43,10 @@ final class Notifier {
         }
     }
 
-    func taskFinished(_ sessionName: String) {
+    func taskFinished(_ sessionName: String, banner: Bool = true) {
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: Settings.soundEnabledKey) { playSound() }
-        guard defaults.bool(forKey: Settings.notifyKey) else { return }
+        guard banner, defaults.bool(forKey: Settings.notifyKey) else { return }
         notify(title: "Claude is done", body: "\(sessionName) finished and is waiting for you.")
     }
 

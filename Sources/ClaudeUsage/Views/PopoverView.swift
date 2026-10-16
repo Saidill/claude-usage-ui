@@ -5,12 +5,16 @@ struct PopoverView: View {
     @EnvironmentObject var usage: UsageTracker
     @EnvironmentObject var limits: PlanLimitClient
     @EnvironmentObject var recent: RecentSessionStore
+    @EnvironmentObject var display: DisplayModeController
+    /// Shown inside the notch: no glass, and the notch window sizes itself.
+    var inNotch = false
     @State private var showSettings = false
     @AppStorage("popoverTab") private var tab = 0 // 0 = now, 1 = recent, 2 = usage
     @State private var range = 0 // 0 = today, 1 = week
     @State private var hoveredBar: Int?
     @State private var refreshTurns = 0.0
-    @State private var greetingBounce = 0
+    /// Clicking the dragon makes it hop for a moment.
+    @State private var petted = false
     /// Measured height of the current tab's content; the popover shrinks to fit it.
     @State private var contentHeight: CGFloat = 300
     private let maxContentHeight: CGFloat = 470
@@ -18,6 +22,47 @@ struct PopoverView: View {
     @State private var window: NSWindow?
 
     var body: some View {
+        Group {
+            if inNotch {
+                content
+            } else {
+                menuBarWindow
+            }
+        }
+        .onAppear {
+            usage.refresh()
+            Task { await limits.refreshIfStale() }
+            if tab == 1 { loadRecent() }
+        }
+        .onChange(of: tab) { _, t in if t == 1 { loadRecent() } }
+        .preferredColorScheme(.dark)
+    }
+
+    /// The popover as it appears from the menu bar: a rounded sheet of frosted glass that shrinks to fit.
+    private var menuBarWindow: some View {
+        let sheet = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        return content
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: PopoverHeightKey.self, value: geo.size.height)
+            })
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Palette.bg)
+            .background(GlassBackground())
+            .overlay { ConfettiView(trigger: sessions.finishCount) }
+            .clipShape(sheet)
+            .overlay(sheet.strokeBorder(Palette.rim, lineWidth: 1))
+            .background(WindowReader { w in
+                guard window !== w else { return }
+                // Let the glass show through the window itself.
+                w.isOpaque = false
+                w.backgroundColor = .clear
+                window = w
+            })
+            .onPreferenceChange(PopoverHeightKey.self) { fitWindow(height: $0) }
+            .onChange(of: window) { _, _ in fitWindow(height: popoverHeight) }
+    }
+
+    private var content: some View {
         // Header and tabs pinned on top; the body is exactly as tall as its content (scrolling past a max),
         // so there is no empty space and nothing floats in the middle.
         VStack(spacing: 12) {
@@ -30,9 +75,10 @@ struct PopoverView: View {
             .padding([.horizontal, .top], 14)
 
             ScrollView(.vertical, showsIndicators: false) {
-                Group {
+                ZStack(alignment: .top) {
                     if showSettings {
                         SettingsView()
+                            .transition(pageTransition)
                     } else {
                         VStack(spacing: 12) {
                             switch tab {
@@ -43,10 +89,12 @@ struct PopoverView: View {
                                 sessionsCard
                             }
                         }
+                        .id(tab)
+                        .transition(pageTransition)
                     }
                 }
                 .padding([.horizontal, .bottom], 14)
-                .padding(.top, 2) // room for card shadows
+                .padding(.top, 2)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(GeometryReader { geo in
                     Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
@@ -57,23 +105,15 @@ struct PopoverView: View {
         }
         .frame(width: 344)
         .fixedSize(horizontal: false, vertical: true)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: PopoverHeightKey.self, value: geo.size.height)
-        })
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Palette.bg)
-        .overlay { ConfettiView(trigger: sessions.finishCount) }
-        .background(WindowReader { if window !== $0 { window = $0 } })
-        .onPreferenceChange(PopoverHeightKey.self) { fitWindow(height: $0) }
-        .onChange(of: window) { _, _ in fitWindow(height: popoverHeight) }
-        .onAppear {
-            usage.refresh()
-            if tab == 1 { loadRecent() }
-        }
-        .onChange(of: tab) { _, t in if t == 1 { loadRecent() } }
     }
 
     @State private var popoverHeight: CGFloat = 0
+
+    /// How one page of the popover gives way to the next. The old page leaves at once, so the window
+    /// resizes a single time, and the new one fades up into place.
+    private var pageTransition: AnyTransition {
+        .asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .identity)
+    }
 
     /// Resizes the window to the content, keeping its top edge under the menu bar.
     private func fitWindow(height: CGFloat) {
@@ -95,42 +135,67 @@ struct PopoverView: View {
 
     private var header: some View {
         let greeting = Greeting.now
-        return HStack(spacing: 10) {
-            Button { greetingBounce += 1 } label: {
-                Image(systemName: greeting.symbol)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
-                    .symbolEffect(.bounce, value: greetingBounce)
+        return HStack(spacing: 8) {
+            Button { pet() } label: {
+                DragonView(mood: dragonMood, size: 34)
+                    .padding(.top, 4)
                     .frame(width: 38, height: 38)
-                    .background(Circle().fill(LinearGradient(colors: [Palette.lime, Palette.purple],
-                                                             startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    .background(Circle().fill(Palette.glass))
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(Palette.silverGradient.opacity(0.5), lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .help("Make it roar")
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(showSettings ? "Settings" : greeting.text)
-                    .font(.rounded(17, .bold))
+                    .font(.app(16, .medium))
                     .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .contentTransition(.opacity)
                 Text(statusLine)
-                    .font(.rounded(12))
+                    .font(.app(11.5))
                     .foregroundStyle(Palette.text2)
-                    .contentTransition(.interpolate)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(Motion.smooth, value: statusLine)
             }
             Spacer()
             if !showSettings {
                 IconButton(systemName: "arrow.clockwise", help: "Refresh", rotation: refreshTurns) {
-                    withAnimation(.spring(duration: 0.7, bounce: 0.3)) { refreshTurns += 360 }
+                    withAnimation(.smooth(duration: 0.8)) { refreshTurns += 360 }
                     usage.refresh()
                     if tab == 1 { loadRecent() }
                     Task { await limits.refresh() }
                 }
             }
-            IconButton(systemName: showSettings ? "xmark" : "gearshape.fill", help: "Settings") {
-                showSettings.toggle()
+            if display.notchScreen != nil, !showSettings {
+                IconButton(systemName: display.isNotch ? "menubar.rectangle" : "rectangle.topthird.inset.filled",
+                           help: display.isNotch ? "Show in the menu bar" : "Show in the notch") {
+                    display.toggle()
+                }
             }
-            IconButton(systemName: "power", help: "Quit") { NSApp.terminate(nil) }
+            IconButton(systemName: showSettings ? "xmark" : "gearshape.fill", help: "Settings") {
+                withAnimation(Motion.smooth) { showSettings.toggle() }
+            }
         }
         .padding(.horizontal, 2)
+    }
+
+    private func pet() {
+        petted = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            petted = false
+        }
+    }
+
+    /// The dragon mirrors what Claude is doing.
+    private var dragonMood: DragonMood {
+        if petted || sessions.celebrating { return .happy }
+        if sessions.busyCount > 0 { return .working }
+        return sessions.sessions.isEmpty ? .sleeping : .idle
     }
 
     private var statusLine: String {
@@ -151,22 +216,29 @@ struct PopoverView: View {
             CardTitle("Plan limits") {
                 if let error = limits.error {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(Palette.sun)
+                        .foregroundStyle(Palette.amber)
                         .help(error)
                 }
             }
             if limits.windows.isEmpty {
                 Text(limits.error ?? "Checking your limits…")
-                    .font(.rounded(12))
+                    .font(.app(12))
                     .foregroundStyle(Palette.text2)
             } else {
-                LimitBar(title: "Session", percent: session?.utilization,
-                         subtitle: session?.resetsAt.map(formatReset) ?? "", base: Palette.purple)
+                VStack(alignment: .leading, spacing: 8) {
+                    LimitBar(title: "Session", percent: session?.utilization,
+                             subtitle: session?.resetsAt.map(formatReset) ?? "", shimmering: limits.isRefreshing)
+                    if let forecast = limits.forecast {
+                        ForecastLine(forecast: forecast)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
+                    }
+                }
+                .animation(Motion.smooth, value: limits.forecast)
                 LimitBar(title: "Week", percent: week?.utilization,
-                         subtitle: week?.resetsAt.map(formatReset) ?? "", base: Palette.lime)
+                         subtitle: week?.resetsAt.map(formatReset) ?? "", shimmering: limits.isRefreshing)
                 ForEach(extras) { w in
                     Chip(label: w.title, value: "\(Int(w.utilization.rounded()))%",
-                         color: Palette.level(w.utilization, base: Palette.lime))
+                         color: Palette.level(w.utilization, base: Palette.steel))
                 }
             }
         }
@@ -180,20 +252,21 @@ struct PopoverView: View {
             CardTitle("Sessions") {
                 if !sessions.sessions.isEmpty {
                     Text("\(sessions.sessions.count)")
-                        .font(.rounded(11, .bold))
-                        .foregroundStyle(Palette.purple)
+                        .font(.app(10.5, .semibold))
+                        .foregroundStyle(Palette.text)
+                        .monospacedDigit()
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Palette.purple.opacity(0.12)))
+                        .background(Capsule().fill(Palette.glass))
+                        .overlay(Capsule().strokeBorder(Palette.line, lineWidth: 0.5))
+                        .contentTransition(.numericText())
                 }
             }
             if sessions.sessions.isEmpty {
                 HStack(spacing: 10) {
-                    Image(systemName: "moon.zzz.fill")
-                        .foregroundStyle(Palette.text3)
-                        .symbolEffect(.pulse)
+                    DragonView(mood: .sleeping, size: 30)
                     Text("Start `claude` in a terminal and it shows up here.")
-                        .font(.rounded(12))
+                        .font(.app(12))
                         .foregroundStyle(Palette.text2)
                 }
                 .padding(.vertical, 4)
@@ -219,7 +292,7 @@ struct PopoverView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "clock.arrow.circlepath").foregroundStyle(Palette.text3)
                     Text(recent.loaded ? "No past sessions yet." : "Looking for past sessions…")
-                        .font(.rounded(12))
+                        .font(.app(12))
                         .foregroundStyle(Palette.text2)
                 }
                 .padding(.vertical, 4)
@@ -254,12 +327,12 @@ struct PopoverView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(formatTokens(bigNumber))
-                    .font(.rounded(32, .bold))
-                    .foregroundStyle(hoveredBar == nil ? Palette.text : Palette.purple)
+                    .font(.app(34, .ultraLight))
+                    .foregroundStyle(hoveredBar == nil ? AnyShapeStyle(Palette.text) : AnyShapeStyle(Palette.silverGradient))
                     .contentTransition(.numericText())
-                    .animation(.snappy(duration: 0.25), value: bigNumber)
+                    .animation(Motion.quick, value: bigNumber)
                 Text(caption)
-                    .font(.rounded(12))
+                    .font(.app(12))
                     .foregroundStyle(Palette.text2)
             }
 
@@ -274,18 +347,18 @@ struct PopoverView: View {
 
             Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    Chip(label: "Output", value: formatTokens(summary.output), color: Palette.purple)
-                    Chip(label: "Input", value: formatTokens(summary.input), color: Palette.lime)
+                    Chip(label: "Output", value: formatTokens(summary.output), color: Palette.silver)
+                    Chip(label: "Input", value: formatTokens(summary.input), color: Palette.silver)
                 }
                 GridRow {
-                    Chip(label: "Cache", value: formatTokens(summary.cacheRead + summary.cacheWrite), color: Palette.sun)
-                    Chip(label: "Replies", value: summary.messages.formatted(), color: Palette.coral)
+                    Chip(label: "Cache", value: formatTokens(summary.cacheRead + summary.cacheWrite), color: Palette.text3)
+                    Chip(label: "Replies", value: summary.messages.formatted(), color: .white)
                 }
             }
 
             if !models.isEmpty {
                 Text(modelLine(models))
-                    .font(.rounded(11))
+                    .font(.app(11))
                     .foregroundStyle(Palette.text3)
             }
         }
@@ -319,27 +392,29 @@ struct SessionRow: View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(session.isBusy ? Palette.purple.opacity(0.15) : Palette.lime.opacity(0.3))
+                    .fill(Palette.glass)
+                    .overlay(Circle().strokeBorder(session.isBusy ? AnyShapeStyle(Palette.silverGradient) : AnyShapeStyle(Palette.line),
+                                                   lineWidth: 1))
                     .frame(width: 32, height: 32)
                 if session.isBusy {
                     WorkingBadge(hovering: hovering)
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(Palette.limeInk)
-                        .transition(.scale(scale: 0.2).combined(with: .opacity))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.silver)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.displayName)
-                    .font(.rounded(13, .semibold))
+                    .font(.app(13, .medium))
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
                 Text(detail)
-                    .font(.rounded(11))
-                    .foregroundStyle(session.isBusy ? Palette.purple : Palette.text2)
+                    .font(.app(11))
+                    .foregroundStyle(session.isBusy ? Palette.silver : Palette.text3)
                     .monospacedDigit()
                     .lineLimit(1)
             }
@@ -356,17 +431,17 @@ struct SessionRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(hovering ? Palette.bg : .clear)
+                .fill(hovering ? Palette.hover : .clear)
         )
         .padding(.horizontal, -8)
         .contentShape(Rectangle())
-        .onHover { h in withAnimation(.spring(duration: 0.25)) { hovering = h } }
+        .onHover { h in withAnimation(Motion.quick) { hovering = h } }
         .onTapGesture { TerminalLauncher.focus(session) }
         .contextMenu {
             Button("Jump to session") { TerminalLauncher.focus(session) }
             Button("Show in Finder") { TerminalLauncher.revealInFinder(session) }
         }
-        .animation(.spring(duration: 0.45, bounce: 0.55), value: session.isBusy)
+        .animation(Motion.smooth, value: session.isBusy)
         .help("Jump to this session · \(session.folder)")
     }
 
@@ -409,27 +484,29 @@ struct RecentRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: hovering ? "play.fill" : "bubble.left.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(hovering ? Palette.onLime : Palette.limeInk)
+            Image(systemName: hovering ? "play.fill" : "bubble.left")
+                .font(.system(size: 11, weight: hovering ? .semibold : .regular))
+                .foregroundStyle(hovering ? Palette.onSilver : Palette.silver)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(hovering ? Palette.lime : Palette.lime.opacity(0.3)))
+                .background(Circle().fill(hovering ? AnyShapeStyle(Palette.silverGradient) : AnyShapeStyle(Palette.glass)))
+                .overlay(Circle().strokeBorder(Palette.line, lineWidth: hovering ? 0 : 1))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title)
-                    .font(.rounded(13, .semibold))
+                    .font(.app(13, .medium))
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
                 Text("\(session.shortFolder) · \(session.lastActive.formatted(.relative(presentation: .named)))")
-                    .font(.rounded(11))
-                    .foregroundStyle(Palette.text2)
+                    .font(.app(11))
+                    .foregroundStyle(Palette.text3)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             if hovering {
                 Text("Resume")
-                    .font(.rounded(11, .bold))
-                    .foregroundStyle(Palette.purple)
+                    .font(.app(11, .medium))
+                    .foregroundStyle(Palette.silver)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
         }
@@ -437,11 +514,11 @@ struct RecentRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(hovering ? Palette.bg : .clear)
+                .fill(hovering ? Palette.hover : .clear)
         )
         .padding(.horizontal, -8)
         .contentShape(Rectangle())
-        .onHover { h in withAnimation(.spring(duration: 0.25)) { hovering = h } }
+        .onHover { h in withAnimation(Motion.quick) { hovering = h } }
         .onTapGesture { TerminalLauncher.resume(sessionId: session.id, cwd: session.cwd) }
         .contextMenu {
             Button("Resume in Terminal") { TerminalLauncher.resume(sessionId: session.id, cwd: session.cwd) }
@@ -457,6 +534,53 @@ struct RecentRow: View {
     }
 }
 
+// MARK: - Forecast
+
+/// One line under the session bar saying where the limit is heading at the current pace.
+struct ForecastLine: View {
+    let forecast: LimitForecast
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .medium))
+                .contentTransition(.symbolEffect(.replace))
+            Text(text)
+                .contentTransition(.opacity)
+        }
+        .font(.app(11))
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help("Based on how fast your session limit has filled over the last 30 minutes.")
+    }
+
+    private var minutesLeft: Double? {
+        if case .hitsLimit(let at) = forecast { return at.timeIntervalSinceNow / 60 }
+        return nil
+    }
+
+    private var symbol: String {
+        switch forecast {
+        case .idle: return "pause.circle"
+        case .makesIt: return "checkmark.circle"
+        case .hitsLimit: return "hourglass"
+        }
+    }
+
+    private var text: String {
+        switch forecast {
+        case .idle: return "Steady, no usage in the last few minutes"
+        case .makesIt: return "On pace to last until the reset"
+        case .hitsLimit(let at): return "At this pace, full at \(at.formatted(date: .omitted, time: .shortened))"
+        }
+    }
+
+    private var color: Color {
+        guard let minutesLeft else { return forecast == .idle ? Palette.text3 : Palette.steel }
+        return minutesLeft < 30 ? Palette.rose : Palette.amber
+    }
+}
+
 // MARK: - Greeting
 
 struct Greeting {
@@ -466,10 +590,10 @@ struct Greeting {
 
     static var now: Greeting {
         switch Calendar.current.component(.hour, from: Date()) {
-        case 5..<12: return Greeting(text: "Good morning", symbol: "sun.max.fill", color: Palette.limeInk)
-        case 12..<17: return Greeting(text: "Good afternoon", symbol: "sun.haze.fill", color: Palette.limeInk)
-        case 17..<21: return Greeting(text: "Good evening", symbol: "sunset.fill", color: Palette.purple)
-        default: return Greeting(text: "Late night coding", symbol: "moon.stars.fill", color: Palette.purple)
+        case 5..<12: return Greeting(text: "Good morning", symbol: "sun.max.fill", color: Palette.silver)
+        case 12..<17: return Greeting(text: "Good afternoon", symbol: "sun.haze.fill", color: Palette.silver)
+        case 17..<21: return Greeting(text: "Good evening", symbol: "sunset.fill", color: Palette.silver)
+        default: return Greeting(text: "Late night coding", symbol: "moon.stars.fill", color: Palette.silver)
         }
     }
 }
